@@ -1,0 +1,17 @@
+/vendor
+/node_modules
+/public/storage
+/public/hot
+.env
+.env.backup
+.phpunit.result.cache
+/database/*.sqlite
+/database/*.sqlite-journal
+/storage/*.key
+/.idea
+/.vscode
+*.log
+Homestead.json
+/public/uploads/*
+!/public/uploads/.gitkeep
+!/public/uploads/.htaccess
