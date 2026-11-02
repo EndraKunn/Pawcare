@@ -1,3 +1,5 @@
+<!-- dashboardPawcare -->
+
 @extends('layouts.dashboard')
 @section('title', 'Dashboard')
 @section('heading', 'Halo, '.explode(' ', $user->name)[0].' 👋')
