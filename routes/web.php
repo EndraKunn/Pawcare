@@ -150,28 +150,6 @@ Route::middleware(['auth', 'role:business_owner'])
         Route::get('/', [Owner\DashboardController::class, 'index'])
             ->name('dashboard');
 
-        // Profil bisnis & pengaturan jadwal/slot.
-        Route::get('/bisnis', [Owner\BusinessController::class, 'edit'])
-            ->name('business.edit');
-
-        Route::put('/bisnis', [Owner\BusinessController::class, 'update'])
-            ->name('business.update');
-
-        Route::put('/bisnis/jadwal', [
-            Owner\BusinessController::class,
-            'updateSchedule',
-        ])->name('business.schedule.update');
-
-        Route::post('/bisnis/libur', [
-            Owner\BusinessController::class,
-            'storeClosure',
-        ])->name('business.closures.store');
-
-        Route::delete('/bisnis/libur/{closure}', [
-            Owner\BusinessController::class,
-            'destroyClosure',
-        ])->name('business.closures.destroy');
-
         // Kalender Booking & Ketersediaan Slot.
         Route::get('/kalender', [Owner\CalendarController::class, 'index'])
             ->name('calendar.index');
@@ -269,32 +247,6 @@ Route::middleware(['auth', 'role:admin'])
     ->group(function () {
         Route::get('/', [Admin\DashboardController::class, 'index'])
             ->name('dashboard');
-
-        // Manajemen pengguna.
-        Route::get('/pengguna', [Admin\UserController::class, 'index'])
-            ->name('users.index');
-
-        Route::get('/pengguna/{user}', [Admin\UserController::class, 'show'])
-            ->name('users.show');
-
-        Route::patch('/pengguna/{user}/status', [Admin\UserController::class, 'toggle'])
-            ->name('users.toggle');
-
-        // Manajemen klien/pemilik bisnis.
-        Route::get('/klien', [Admin\ClientController::class, 'index'])
-            ->name('clients.index');
-
-        Route::get('/klien/{business}', [Admin\ClientController::class, 'show'])
-            ->name('clients.show');
-
-        Route::get('/klien/{business}/ubah', [Admin\ClientController::class, 'edit'])
-            ->name('clients.edit');
-
-        Route::put('/klien/{business}', [Admin\ClientController::class, 'update'])
-            ->name('clients.update');
-
-        Route::patch('/klien/{business}/status', [Admin\ClientController::class, 'toggle'])
-            ->name('clients.toggle');
 
         // Monitoring platform.
         Route::get('/layanan', [Admin\MonitorController::class, 'services'])

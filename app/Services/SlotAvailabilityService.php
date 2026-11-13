@@ -61,6 +61,7 @@ class SlotAvailabilityService
 
         // 1. Periksa hari libur khusus bisnis.
         $isHoliday = $business->closures()
+            ->where('is_active', true)
             ->whereDate('closed_date', $bookingDate->toDateString())
             ->exists();
 
@@ -149,7 +150,7 @@ class SlotAvailabilityService
         $date = Carbon::parse($dateString);
         $dateStr = $date->toDateString();
 
-        $closure = $business->closures()->whereDate('closed_date', $dateStr)->first();
+        $closure = $business->closures()->where('is_active', true)->whereDate('closed_date', $dateStr)->first();
         if ($closure) {
             return [
                 'is_open' => false,
