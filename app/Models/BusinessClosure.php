@@ -11,12 +11,14 @@ class BusinessClosure extends Model
         'business_id',
         'closed_date',
         'reason',
+        'is_active',
     ];
 
     protected function casts(): array
     {
         return [
             'closed_date' => 'date',
+            'is_active' => 'boolean',
         ];
     }
 
