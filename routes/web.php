@@ -21,38 +21,10 @@ Route::get('/bisnis/{business}', [HomeController::class, 'showBusiness'])->name(
 Route::post('/webhook/payment/midtrans', [PaymentWebhookController::class, 'midtrans'])
     ->name('webhooks.midtrans');
 
-/* ---------------- Autentikasi ---------------- */
-Route::middleware('guest')->group(function () {
-    Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
-
-    Route::post('/login', [AuthController::class, 'login'])
-        ->middleware('throttle:10,1')
-        ->name('login.attempt');
-
-    Route::get('/daftar/pelanggan', [AuthController::class, 'showRegisterCustomer'])
-        ->name('register.customer');
-
-    Route::post('/daftar/pelanggan', [AuthController::class, 'registerCustomer'])
-        ->name('register.customer.store');
-
-    Route::get('/daftar/mitra', [AuthController::class, 'showRegisterOwner'])
-        ->name('register.owner');
-
-    Route::post('/daftar/mitra', [AuthController::class, 'registerOwner'])
-        ->name('register.owner.store');
-});
-
-Route::post('/logout', [AuthController::class, 'logout'])
-    ->middleware('auth')
-    ->name('logout');
-
 /* ---------------- Semua role yang sudah login ---------------- */
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', DashboardRedirectController::class)->name('dashboard');
 
-    Route::get('/profil', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::put('/profil', [ProfileController::class, 'update'])->name('profile.update');
-    Route::put('/profil/password', [ProfileController::class, 'password'])->name('profile.password');
 
     // Akses bukti pembayaran privat tetap divalidasi oleh controller.
     Route::get('/pembayaran/{payment}/bukti', [PaymentProofController::class, 'show'])
