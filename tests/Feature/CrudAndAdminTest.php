@@ -124,7 +124,7 @@ class CrudAndAdminTest extends TestCase
         $cust = $this->makeUser();
         $this->actingAs($admin);
 
-        $this->patch(route('admin.users.toggle', $admin->id))->assertSessionHas('error');
+        $this->patch(route('admin.users.toggle', $admin->id))->assertRedirect()->assertSessionHasErrors();
         $this->assertTrue($admin->fresh()->status);
         $this->patch(route('admin.users.toggle', $cust->id));
         $this->assertFalse($cust->fresh()->status);
