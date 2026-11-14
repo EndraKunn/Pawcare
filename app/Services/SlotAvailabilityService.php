@@ -102,7 +102,12 @@ class SlotAvailabilityService
 
         $startMin = $this->timeToMinutes($time);
         $closeMin = $this->timeToMinutes($closesAt);
-        $endMin = min($closeMin, $startMin + max(15, $durationMinutes));
+        if ($startMin + max(15, $durationMinutes) > $closeMin) {
+            throw ValidationException::withMessages([
+                'booking_time' => 'Durasi layanan melewati jam tutup. Pilih waktu lebih awal.',
+            ]);
+        }
+        $endMin = $startMin + max(15, $durationMinutes);
 
         // 5. Periksa waktu istirahat bisnis jika diatur.
         if (filled($hours->break_starts_at) && filled($hours->break_ends_at)) {
