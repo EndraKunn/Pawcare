@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingItem;
 use App\Models\BookingStatusLog;
 use App\Models\Business;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Pet;
 use App\Models\Service;
@@ -23,20 +24,29 @@ class BookingService
     }
 
     /**
-     * Membuat booking. Seluruh validasi kepemilikan, ketersediaan slot, dan perhitungan harga
-     * dilakukan di server di dalam transaksi database; total dari browser tidak dipercaya.
+     * Membuat booking. Validasi kepemilikan, harga, dan kapasitas slot dilakukan
+     * dalam transaksi. Business row menjadi mutex database agar dua checkout
+     * pada bisnis yang sama tidak membaca kapasitas yang sama secara bersamaan.
      *
-     * @param  array{business_id:int,pet_id:int,booking_date:string,booking_time:string,notes:?string,quantities:array<int,int>}  $data
+     * @param array{business_id:int,pet_id:int,booking_date:string,booking_time:string,notes:?string,quantities:array<int,int>} $data
      */
-    public function create(User $customer, array $data): Booking
+    public function create(User $customer, array $data, ?Order $order = null): Booking
     {
-        return DB::transaction(function () use ($customer, $data) {
-            $business = Business::active()->find($data['business_id']);
+        return DB::transaction(function () use ($customer, $data, $order) {
+            $business = Business::active()
+                ->whereKey($data['business_id'])
+                ->lockForUpdate()
+                ->first();
+
             if (! $business) {
                 throw ValidationException::withMessages(['business_id' => 'Bisnis tidak tersedia.']);
             }
 
-            $pet = Pet::ownedBy($customer)->whereNull('archived_at')->find($data['pet_id']);
+            $pet = Pet::ownedBy($customer)
+                ->whereNull('archived_at')
+                ->lockForUpdate()
+                ->find($data['pet_id']);
+
             if (! $pet) {
                 throw ValidationException::withMessages(['pet_id' => 'Hewan tidak ditemukan pada akun Anda.']);
             }
@@ -45,6 +55,8 @@ class BookingService
             $services = Service::active()
                 ->where('business_id', $business->id)
                 ->whereIn('id', $serviceIds)
+                ->orderBy('id')
+                ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
 
@@ -57,7 +69,7 @@ class BookingService
             $bookingTime = substr($data['booking_time'], 0, 5);
             $durationMinutes = $this->slotService->calculateDurationMinutes($services, $data['quantities']);
 
-            // Validasi hari libur, jam operasional, waktu istirahat, dan kapasitas slot di dalam transaksi.
+            // Business row sudah dikunci; pemeriksaan kapasitas menjadi serial untuk bisnis ini.
             $slotMeta = $this->slotService->assertSlotAvailable(
                 $business,
                 $data['booking_date'],
@@ -66,6 +78,7 @@ class BookingService
             );
 
             $booking = Booking::create([
+                'order_id' => $order?->id,
                 'invoice_number' => Booking::generateInvoiceNumber(),
                 'customer_id' => $customer->id,
                 'business_id' => $business->id,
@@ -85,7 +98,7 @@ class BookingService
                 BookingItem::create([
                     'booking_id' => $booking->id,
                     'service_id' => $service->id,
-                    'price' => $service->price, // snapshot harga saat booking
+                    'price' => $service->price,
                     'quantity' => $qty,
                 ]);
                 $total += $service->price * $qty;

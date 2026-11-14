@@ -2,6 +2,7 @@
 @section('title', 'Booking '.$business->business_name)
 @section('heading', 'Booking layanan')
 @section('subtitle', $business->business_name.' · total dihitung otomatis oleh server.')
+@section('actions')<a class="btn line" href="{{ route('customer.bookings.cart') }}">🛒 Lihat keranjang</a>@endsection
 
 @section('content')
 @php
@@ -49,7 +50,6 @@
           <x-field name="booking_time" label="Jam layanan" type="time" :value="$bookingTimeVal" required />
         </div>
 
-        {{-- INFORMASI SLOT TERSEDIA PADA TANGGAL ACUAN --}}
         @if (isset($slotInfo))
           <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--field)">
             <div class="row sp wrapf" style="margin-bottom:8px">
@@ -66,12 +66,7 @@
                   @if ($slot['is_break'])
                     <span class="pill gray" style="font-size:11.5px">☕ {{ $slot['time'] }} (Istirahat)</span>
                   @elseif ($slot['available'])
-                    <button
-                      type="button"
-                      class="chip"
-                      style="padding:5px 12px;font-size:12px"
-                      onclick="document.querySelector('input[name=booking_time]').value='{{ $slot['time'] }}'"
-                    >
+                    <button type="button" class="chip" style="padding:5px 12px;font-size:12px" onclick="document.querySelector('input[name=booking_time]').value='{{ $slot['time'] }}'">
                       ✔ {{ $slot['time'] }} (Sisa {{ $slot['remaining'] }})
                     </button>
                   @else
@@ -93,7 +88,8 @@
         <div id="sumList"></div>
         <div class="total"><span>Total (perkiraan)</span><b id="sumTotal">Rp 0</b></div>
         <p class="note">Total final dan ketersediaan slot diverifikasi ulang oleh server saat booking disimpan.</p>
-        <button class="btn block lg mt" type="submit">Buat booking</button>
+        <button class="btn block lg mt" type="submit">Buat booking sekarang</button>
+        <button class="btn block line mt" type="submit" formaction="{{ route('customer.bookings.cart.add') }}">Tambah ke keranjang</button>
       </div>
     </div>
   </div>

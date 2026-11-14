@@ -34,6 +34,7 @@ class Booking extends Model
     ];
 
     protected $fillable = [
+        'order_id',
         'invoice_number',
         'customer_id',
         'business_id',
@@ -54,6 +55,11 @@ class Booking extends Model
             'total_price' => 'float',
             'duration_minutes' => 'integer',
         ];
+    }
+
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
     }
 
     public function customer(): BelongsTo
