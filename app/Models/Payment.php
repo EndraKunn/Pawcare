@@ -85,6 +85,14 @@ class Payment extends Model
         return $this->belongsTo(User::class, 'verified_by');
     }
 
+    /**
+     * Riwayat percobaan pembayaran.
+     */
+    public function attempts(): HasMany
+    {
+        return $this->hasMany(PaymentAttempt::class)->latest('id');
+    }
+
     public function gatewayLogs(): HasMany
     {
         return $this->hasMany(PaymentGatewayLog::class)->orderByDesc('id');

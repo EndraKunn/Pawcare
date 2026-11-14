@@ -4,9 +4,12 @@ namespace App\Services;
 
 use App\Models\Booking;
 use App\Models\Payment;
+use App\Models\PaymentAttempt;
 use App\Models\PaymentGatewayLog;
+use App\Models\PaymentRefund;
 use App\Models\User;
 use App\Notifications\PawCareStatusNotification;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -18,7 +21,7 @@ class PaymentGatewayService
     public const PROVIDER = 'midtrans';
 
     public const CHANNELS = [
-        'qris' => 'QRIS (GoPay, OVO, Dana, ShopeePay, Mobile Banking)',
+        'qris' => 'QRIS dinamis',
         'bca_va' => 'BCA Virtual Account',
         'bri_va' => 'BRI Virtual Account',
         'mandiri_va' => 'Mandiri Bill Payment',
@@ -27,12 +30,18 @@ class PaymentGatewayService
 
     public function serverKey(): string
     {
-        return (string) config('services.midtrans.server_key', 'SB-Mid-server-pawcare-sandbox-key');
+        return (string) config('services.midtrans.server_key', '');
+    }
+
+    private function apiBase(): string
+    {
+        return (bool) config('services.midtrans.is_production')
+            ? 'https://api.midtrans.com'
+            : 'https://api.sandbox.midtrans.com';
     }
 
     /**
-     * Buat atau perbarui sesi pembayaran Payment Gateway (Midtrans Sandbox)
-     * menggunakan nominal resmi dari database.
+     * Membuat transaksi Midtrans Core API.
      */
     public function createTransaction(
         Booking $booking,
@@ -40,7 +49,9 @@ class PaymentGatewayService
         string $channel = 'qris'
     ): Payment {
         if ((int) $booking->customer_id !== (int) $customer->id) {
-            throw new AccessDeniedHttpException('Anda tidak berhak mengakses pembayaran booking ini.');
+            throw new AccessDeniedHttpException(
+                'Anda tidak berhak mengakses pembayaran booking ini.'
+            );
         }
 
         if ($booking->status === Booking::STATUS_CANCELLED) {
@@ -50,78 +61,346 @@ class PaymentGatewayService
         }
 
         $payment = $booking->payment;
-        if (! $payment) {
-            throw ValidationException::withMessages([
-                'payment' => 'Data pembayaran tidak ditemukan.',
-            ]);
-        }
 
-        if ($payment->status === Payment::PAID) {
+        if (! $payment || $payment->status === Payment::PAID) {
             throw ValidationException::withMessages([
-                'payment' => 'Pembayaran untuk booking ini sudah lunas.',
+                'payment' => 'Pembayaran tidak tersedia atau sudah lunas.',
             ]);
         }
 
         if (! array_key_exists($channel, self::CHANNELS)) {
-            $channel = 'qris';
+            throw ValidationException::withMessages([
+                'channel' => 'Metode pembayaran tidak didukung.',
+            ]);
         }
 
-        // Gunakan nominal dari database (total_price booking), bukan input pengguna.
-        $grossAmount = (float) $booking->total_price;
-        $orderId = 'PAW-'.$booking->id.'-'.now()->format('YmdHis').'-'.strtoupper(Str::random(4));
-        $transactionId = 'MID-SBX-'.strtoupper(Str::random(12));
-        $expiresAt = now()->addHours(24);
-        $paymentUrl = route('customer.bookings.pay', ['booking' => $booking->id, 'gateway_ref' => $orderId]);
+        if (! filled($this->serverKey())) {
+            throw ValidationException::withMessages([
+                'payment' => 'MIDTRANS_SERVER_KEY belum diatur.',
+            ]);
+        }
 
-        // Jika diaktifkan koneksi ke endpoint Midtrans Sandbox eksternal:
-        if (config('services.midtrans.use_remote_sandbox') && filled(config('services.midtrans.server_key'))) {
-            try {
-                $response = Http::withBasicAuth($this->serverKey(), '')
-                    ->timeout(8)
-                    ->acceptJson()
-                    ->post((string) config('services.midtrans.snap_url'), [
-                        'transaction_details' => [
-                            'order_id' => $orderId,
-                            'gross_amount' => (int) round($grossAmount),
-                        ],
-                        'customer_details' => [
-                            'first_name' => $customer->name,
-                            'email' => $customer->email,
-                            'phone' => $customer->phone,
-                        ],
-                    ]);
+        /*
+         * Membuat payment attempt dan menyimpan referensi
+         * sebelum request ke Midtrans agar webhook tidak kehilangan referensi.
+         */
+        [$attempt, $amount, $orderId, $payload] = DB::transaction(
+            function () use ($booking, $customer, $payment, $channel) {
+                $lockedBooking = Booking::query()
+                    ->lockForUpdate()
+                    ->findOrFail($booking->id);
 
-                if ($response->successful() && $response->json('redirect_url')) {
-                    $paymentUrl = (string) $response->json('redirect_url');
-                    $transactionId = (string) ($response->json('token') ?: $transactionId);
+                if (
+                    (int) $lockedBooking->customer_id !==
+                    (int) $customer->id
+                ) {
+                    throw new AccessDeniedHttpException(
+                        'Anda tidak berhak mengakses pembayaran booking ini.'
+                    );
                 }
-            } catch (\Throwable) {
-                // Tetap lanjutkan dengan sandbox internal jika jaringan offline.
+
+                if ($lockedBooking->status === Booking::STATUS_CANCELLED) {
+                    throw ValidationException::withMessages([
+                        'payment' => 'Booking telah dibatalkan.',
+                    ]);
+                }
+
+                $lockedPayment = Payment::query()
+                    ->lockForUpdate()
+                    ->findOrFail($payment->id);
+
+                if ($lockedPayment->status === Payment::PAID) {
+                    throw ValidationException::withMessages([
+                        'payment' => 'Pembayaran sudah lunas.',
+                    ]);
+                }
+
+                $amount = (int) round(
+                    (float) $lockedBooking->total_price
+                );
+
+                if ($amount < 1) {
+                    throw ValidationException::withMessages([
+                        'payment' => 'Nominal pembayaran tidak valid.',
+                    ]);
+                }
+
+                $attemptNumber = (int) PaymentAttempt::query()
+                    ->where('payment_id', $lockedPayment->id)
+                    ->max('attempt_number') + 1;
+
+                $orderId = 'PAW-' . $lockedPayment->id . '-'
+                    . now()->format('YmdHis') . '-'
+                    . Str::upper(Str::random(5));
+
+                $paymentType = match ($channel) {
+                    'qris' => 'qris',
+                    'mandiri_va' => 'echannel',
+                    default => 'bank_transfer',
+                };
+
+                $payload = [
+                    'payment_type' => $paymentType,
+                    'transaction_details' => [
+                        'order_id' => $orderId,
+                        'gross_amount' => $amount,
+                    ],
+                    'customer_details' => [
+                        'first_name' => $customer->name,
+                        'email' => $customer->email,
+                        'phone' => $customer->phone,
+                    ],
+                ];
+
+                if ($channel === 'qris') {
+                    $payload['qris'] = [
+                        'acquirer' => 'gopay',
+                    ];
+                } elseif ($channel === 'mandiri_va') {
+                    $payload['echannel'] = [
+                        'bill_info1' => 'PawCare',
+                        'bill_info2' => 'Pembayaran booking',
+                    ];
+                } else {
+                    $bank = match ($channel) {
+                        'bca_va' => 'bca',
+                        'bri_va' => 'bri',
+                        'bni_va' => 'bni',
+                        default => null,
+                    };
+
+                    $payload['bank_transfer'] = [
+                        'bank' => $bank,
+                    ];
+                }
+
+                // Jangan simpan informasi pribadi pelanggan dalam audit request.
+                $storedPayload = $payload;
+                unset($storedPayload['customer_details']);
+
+                $idempotencyKey = (string) Str::uuid();
+                $expiresAt = now()->addHours(24);
+
+                $attempt = PaymentAttempt::create([
+                    'payment_id' => $lockedPayment->id,
+                    'attempt_number' => $attemptNumber,
+                    'provider' => self::PROVIDER,
+                    'channel' => $channel,
+                    'idempotency_key' => $idempotencyKey,
+                    'gateway_order_id' => $orderId,
+                    'amount' => $amount,
+                    'currency' => 'IDR',
+                    'status' => 'creating',
+                    'expires_at' => $expiresAt,
+                    'request_payload' => $storedPayload,
+                ]);
+
+                $lockedPayment->update([
+                    'amount' => $amount,
+                    'payment_method' => Payment::METHOD_GATEWAY,
+                    'gateway_provider' => self::PROVIDER,
+                    'gateway_reference' => $orderId,
+                    'gateway_transaction_id' => null,
+                    'gateway_payment_type' => $channel,
+                    'gateway_status' => Payment::GATEWAY_PENDING,
+                    'gateway_payment_url' => null,
+                    'gateway_expires_at' => $expiresAt,
+                    'status' => Payment::UNPAID,
+                    'reject_reason' => null,
+                    'verified_by' => null,
+                    'verified_at' => null,
+                    'paid_at' => null,
+                ]);
+
+                return [
+                    $attempt,
+                    $amount,
+                    $orderId,
+                    $payload,
+                ];
             }
+        );
+
+        /*
+         * Request Midtrans Core API Charge.
+         */
+        try {
+            $response = Http::withBasicAuth(
+                $this->serverKey(),
+                ''
+            )
+                ->withHeaders([
+                    'Idempotency-Key' => $attempt->idempotency_key,
+                ])
+                ->acceptJson()
+                ->asJson()
+                ->timeout(20)
+                ->post(
+                    $this->apiBase() . '/v2/charge',
+                    $payload
+                );
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            $this->markAttemptFailed(
+                $attempt,
+                $payment,
+                ['error' => 'Gateway connection failed']
+            );
+
+            throw ValidationException::withMessages([
+                'payment' => 'Midtrans tidak dapat dihubungi. Silakan coba lagi.',
+            ]);
         }
 
-        $payment->update([
-            'amount' => $grossAmount,
-            'payment_method' => Payment::METHOD_GATEWAY,
-            'gateway_provider' => self::PROVIDER,
-            'gateway_reference' => $orderId,
-            'gateway_transaction_id' => $transactionId,
-            'gateway_payment_type' => $channel,
-            'gateway_status' => Payment::GATEWAY_PENDING,
-            'gateway_payment_url' => $paymentUrl,
-            'gateway_expires_at' => $expiresAt,
-            'reject_reason' => null,
-        ]);
+        $body = $response->json();
 
-        return $payment->fresh();
+        if (! is_array($body)) {
+            $body = [];
+        }
+
+        if (
+            ! $response->successful() ||
+            empty($body['transaction_id'])
+        ) {
+            $this->markAttemptFailed(
+                $attempt,
+                $payment,
+                $body
+            );
+
+            throw ValidationException::withMessages([
+                'payment' => 'Midtrans gagal membuat transaksi: '
+                    . ($body['status_message'] ?? 'Periksa konfigurasi Sandbox.'),
+            ]);
+        }
+
+        /*
+         * Ambil QRIS URL dari action generate-qr-code.
+         */
+        $actions = collect($body['actions'] ?? []);
+
+        $qrAction = $actions->firstWhere(
+            'name',
+            'generate-qr-code'
+        );
+
+        $redirectAction = $actions->firstWhere(
+            'name',
+            'deeplink-redirect'
+        );
+
+        $qrUrl = is_array($qrAction)
+            ? ($qrAction['url'] ?? null)
+            : null;
+
+        $paymentUrl = is_array($redirectAction)
+            ? ($redirectAction['url'] ?? null)
+            : ($body['redirect_url'] ?? null);
+
+        $expiresAt = ! empty($body['expiry_time'])
+            ? Carbon::parse($body['expiry_time'])
+            : now()->addHours(24);
+
+        /*
+         * Simpan respons Midtrans.
+         */
+        return DB::transaction(function () use (
+            $attempt,
+            $payment,
+            $body,
+            $qrUrl,
+            $paymentUrl,
+            $expiresAt
+        ): Payment {
+            $lockedAttempt = PaymentAttempt::query()
+                ->lockForUpdate()
+                ->findOrFail($attempt->id);
+
+            $attemptUpdates = [
+                'gateway_transaction_id' => $body['transaction_id'],
+                'qr_code_url' => $qrUrl,
+                'payment_url' => $paymentUrl,
+                'response_payload' => $body,
+                'expires_at' => $expiresAt,
+            ];
+
+            if ($lockedAttempt->status === 'creating') {
+                $attemptUpdates['status'] = 'pending';
+            }
+
+            $lockedAttempt->update($attemptUpdates);
+
+            $lockedPayment = Payment::query()
+                ->lockForUpdate()
+                ->findOrFail($payment->id);
+
+            $lockedPayment->update([
+                'gateway_transaction_id' =>
+                    $body['transaction_id']
+                    ?? $lockedPayment->gateway_transaction_id,
+
+                // QRIS memakai QR URL, bukan URL lokal PawCare.
+                'gateway_payment_url' => $qrUrl ?: $paymentUrl,
+
+                'gateway_expires_at' => $expiresAt,
+            ]);
+
+            return $lockedPayment->fresh();
+        });
     }
 
     /**
-     * Hitung signature resmi Midtrans: SHA512(order_id + status_code + gross_amount + ServerKey).
+     * Menandai payment attempt gagal.
      */
-    public function generateSignature(string $orderId, string $statusCode, string $grossAmount): string
-    {
-        return hash('sha512', $orderId.$statusCode.$grossAmount.$this->serverKey());
+    private function markAttemptFailed(
+        PaymentAttempt $attempt,
+        Payment $payment,
+        array $responsePayload
+    ): void {
+        DB::transaction(function () use (
+            $attempt,
+            $payment,
+            $responsePayload
+        ): void {
+            $lockedAttempt = PaymentAttempt::query()
+                ->lockForUpdate()
+                ->findOrFail($attempt->id);
+
+            if ($lockedAttempt->status !== 'settlement') {
+                $lockedAttempt->update([
+                    'status' => 'failed',
+                    'failed_at' => now(),
+                    'response_payload' => $responsePayload,
+                ]);
+            }
+
+            $lockedPayment = Payment::query()
+                ->lockForUpdate()
+                ->findOrFail($payment->id);
+
+            if ($lockedPayment->status !== Payment::PAID) {
+                $lockedPayment->update([
+                    'gateway_status' => Payment::GATEWAY_DENY,
+                    'status' => Payment::REJECTED,
+                    'reject_reason' => 'Transaksi Midtrans gagal dibuat.',
+                ]);
+            }
+        });
+    }
+
+    /**
+     * Signature resmi Midtrans SHA-512.
+     */
+    public function generateSignature(
+        string $orderId,
+        string $statusCode,
+        string $grossAmount
+    ): string {
+        return hash(
+            'sha512',
+            $orderId . $statusCode . $grossAmount . $this->serverKey()
+        );
     }
 
     public function verifySignature(
@@ -130,35 +409,70 @@ class PaymentGatewayService
         string $grossAmount,
         string $signatureKey
     ): bool {
-        if ($orderId === '' || $statusCode === '' || $grossAmount === '' || $signatureKey === '') {
+        if (
+            $orderId === '' ||
+            $statusCode === '' ||
+            $grossAmount === '' ||
+            $signatureKey === '' ||
+            $this->serverKey() === ''
+        ) {
             return false;
         }
 
-        $expected = $this->generateSignature($orderId, $statusCode, $grossAmount);
-
-        return hash_equals($expected, $signatureKey);
+        return hash_equals(
+            $this->generateSignature(
+                $orderId,
+                $statusCode,
+                $grossAmount
+            ),
+            $signatureKey
+        );
     }
 
     /**
-     * Memproses webhook callback Payment Gateway dengan verifikasi signature,
-     * validasi nominal, dan idempotensi penuh.
+     * Memproses webhook Midtrans.
      *
-     * @param  array<string,mixed>  $payload
+     * @param array<string,mixed> $payload
      * @return array{payment:Payment,idempotent:bool}
      */
     public function processWebhook(array $payload): array
     {
         $orderId = trim((string) ($payload['order_id'] ?? ''));
-        $statusCode = trim((string) ($payload['status_code'] ?? '200'));
-        $grossAmountRaw = trim((string) ($payload['gross_amount'] ?? ''));
-        $signatureKey = trim((string) ($payload['signature_key'] ?? ''));
-        $transactionStatus = strtolower(trim((string) ($payload['transaction_status'] ?? '')));
-        $fraudStatus = strtolower(trim((string) ($payload['fraud_status'] ?? 'accept')));
-        $transactionId = trim((string) ($payload['transaction_id'] ?? ''));
-        $paymentType = trim((string) ($payload['payment_type'] ?? ''));
+        $statusCode = trim((string) ($payload['status_code'] ?? ''));
+        $grossRaw = trim((string) ($payload['gross_amount'] ?? ''));
+        $signature = trim((string) ($payload['signature_key'] ?? ''));
 
-        if (! $this->verifySignature($orderId, $statusCode, $grossAmountRaw, $signatureKey)) {
-            throw new AccessDeniedHttpException('Signature webhook tidak valid.');
+        $status = strtolower(
+            trim((string) ($payload['transaction_status'] ?? ''))
+        );
+
+        $fraudStatus = strtolower(
+            trim((string) ($payload['fraud_status'] ?? 'accept'))
+        );
+
+        $transactionId = trim(
+            (string) ($payload['transaction_id'] ?? '')
+        );
+
+        $paymentType = trim(
+            (string) ($payload['payment_type'] ?? '')
+        );
+
+        if (! is_numeric($grossRaw)) {
+            throw ValidationException::withMessages([
+                'gross_amount' => 'Nominal webhook tidak valid.',
+            ]);
+        }
+
+        if (! $this->verifySignature(
+            $orderId,
+            $statusCode,
+            $grossRaw,
+            $signature
+        )) {
+            throw new AccessDeniedHttpException(
+                'Signature webhook Midtrans tidak valid.'
+            );
         }
 
         $payment = Payment::with('booking.customer')
@@ -171,129 +485,268 @@ class PaymentGatewayService
             ]);
         }
 
-        $grossAmount = (float) $grossAmountRaw;
-        if (abs($grossAmount - (float) $payment->amount) > 0.01) {
+        if (
+            abs((float) $grossRaw - (float) $payment->amount) > 0.01
+        ) {
             throw ValidationException::withMessages([
-                'gross_amount' => 'Nominal transaksi webhook tidak sesuai dengan tagihan di server.',
+                'gross_amount' => 'Nominal transaksi webhook tidak sesuai.',
             ]);
         }
 
-        // Idempotency key unik untuk kombinasi order_id + transaction_status + status_code
-        $idempotencyKey = hash('sha256', "{$orderId}|{$transactionStatus}|{$statusCode}");
-
-        if (PaymentGatewayLog::where('idempotency_key', $idempotencyKey)->exists()) {
-            return [
-                'payment' => $payment,
-                'idempotent' => true,
-            ];
-        }
+        $idempotencyKey = hash('sha256', implode('|', [
+            $orderId,
+            $status,
+            $statusCode,
+            $transactionId,
+            (string) ($payload['refund_key'] ?? ''),
+            (string) ($payload['refund_amount'] ?? ''),
+        ]));
 
         return DB::transaction(function () use (
             $payment,
-            $idempotencyKey,
+            $payload,
             $orderId,
-            $transactionStatus,
-            $fraudStatus,
             $statusCode,
-            $grossAmount,
+            $grossRaw,
+            $status,
+            $fraudStatus,
             $transactionId,
             $paymentType,
-            $payload
-        ) {
-            // Double-check idempotensi di dalam transaksi
-            if (PaymentGatewayLog::where('idempotency_key', $idempotencyKey)->exists()) {
+            $idempotencyKey
+        ): array {
+            $lockedPayment = Payment::with('booking.customer')
+                ->lockForUpdate()
+                ->findOrFail($payment->id);
+
+            if ($lockedPayment->gateway_reference !== $orderId) {
+                throw ValidationException::withMessages([
+                    'order_id' => 'Referensi pembayaran tidak cocok.',
+                ]);
+            }
+
+            if (
+                abs(
+                    (float) $grossRaw -
+                    (float) $lockedPayment->amount
+                ) > 0.01
+            ) {
+                throw ValidationException::withMessages([
+                    'gross_amount' => 'Nominal webhook tidak sesuai.',
+                ]);
+            }
+
+            /*
+             * Idempotency:
+             * webhook yang sama tidak boleh membuat ledger ganda.
+             */
+            if (
+                PaymentGatewayLog::where(
+                    'idempotency_key',
+                    $idempotencyKey
+                )->exists()
+            ) {
+                // Pemulihan jika transaksi lama sudah PAID
+                // tetapi settlement belum tercatat.
+                if (
+                    in_array($status, ['settlement', 'capture'], true) &&
+                    $fraudStatus === 'accept' &&
+                    $lockedPayment->status === Payment::PAID
+                ) {
+                    app(PaymentFinancialService::class)
+                        ->settle($lockedPayment->fresh());
+                }
+
                 return [
-                    'payment' => $payment->fresh(),
+                    'payment' => $lockedPayment->fresh(),
                     'idempotent' => true,
                 ];
             }
 
-            // Simpan log tanpa menyertakan signature_key / secret
-            $safePayload = $payload;
-            unset($safePayload['signature_key']);
+            /*
+             * Audit payload hanya menyimpan field yang diperlukan.
+             */
+            $allowedKeys = [
+                'order_id',
+                'status_code',
+                'gross_amount',
+                'transaction_status',
+                'fraud_status',
+                'transaction_id',
+                'payment_type',
+                'transaction_time',
+                'settlement_time',
+                'currency',
+                'refund_key',
+                'refund_amount',
+            ];
+
+            $safePayload = array_intersect_key(
+                $payload,
+                array_flip($allowedKeys)
+            );
 
             PaymentGatewayLog::create([
-                'payment_id' => $payment->id,
+                'payment_id' => $lockedPayment->id,
                 'idempotency_key' => $idempotencyKey,
                 'provider' => self::PROVIDER,
                 'order_id' => $orderId,
-                'transaction_status' => $transactionStatus,
+                'transaction_status' => $status,
                 'status_code' => $statusCode,
-                'gross_amount' => $grossAmount,
-                'payload' => json_encode($safePayload, JSON_UNESCAPED_UNICODE),
+                'gross_amount' => (float) $grossRaw,
+                'payload' => json_encode(
+                    $safePayload,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                ),
                 'processed_at' => now(),
             ]);
 
-            // Jika pembayaran sudah Dibayar sebelumnya, jangan timpa mundur ke gagal/expire
-            if ($payment->status === Payment::PAID) {
-                return [
-                    'payment' => $payment,
-                    'idempotent' => true,
-                ];
+            /*
+             * Penanganan refund.
+             */
+            if (in_array($status, ['refund', 'partial_refund'], true)) {
+                $refundQuery = PaymentRefund::query()
+                    ->where('payment_id', $lockedPayment->id)
+                    ->whereIn('status', ['pending', 'requested']);
+
+                if (filled($payload['refund_key'] ?? null)) {
+                    $refundQuery->where(
+                        'provider_reference',
+                        (string) $payload['refund_key']
+                    );
+                }
+
+                $refund = $refundQuery->oldest('id')->first();
+
+                if ($refund) {
+                    app(PaymentFinancialService::class)
+                        ->completeRefund($refund, $payload);
+                }
             }
 
-            $booking = $payment->booking;
+            $booking = $lockedPayment->booking;
             $customer = $booking?->customer;
 
-            if (
-                $transactionStatus === 'settlement'
-                || ($transactionStatus === 'capture' && $fraudStatus === 'accept')
-            ) {
-                $payment->update([
-                    'payment_method' => Payment::METHOD_GATEWAY,
-                    'gateway_status' => Payment::GATEWAY_SETTLEMENT,
-                    'gateway_transaction_id' => $transactionId ?: $payment->gateway_transaction_id,
-                    'gateway_payment_type' => $paymentType ?: $payment->gateway_payment_type,
-                    'status' => Payment::PAID,
-                    'paid_at' => now(),
-                    'verified_at' => now(),
-                    'reject_reason' => null,
-                ]);
+            /*
+             * Settlement atau capture berhasil.
+             */
+            $isSuccessful = $status === 'settlement'
+                || ($status === 'capture' && $fraudStatus === 'accept');
 
-                if ($booking && $customer) {
-                    $customer->notify(new PawCareStatusNotification(
-                        title: 'Pembayaran berhasil (Gateway)',
-                        message: "Pembayaran untuk booking {$booking->invoice_number} telah diterima melalui Payment Gateway dan berstatus ".Payment::PAID.'.',
-                        url: route('customer.bookings.show', $booking->id),
-                    ));
+            if ($isSuccessful) {
+                $wasAlreadyPaid = $lockedPayment->status === Payment::PAID;
+
+                if (! $wasAlreadyPaid) {
+                    $lockedPayment->update([
+                        'payment_method' => Payment::METHOD_GATEWAY,
+                        'gateway_status' => Payment::GATEWAY_SETTLEMENT,
+                        'gateway_transaction_id' => $transactionId
+                            ?: $lockedPayment->gateway_transaction_id,
+                        'gateway_payment_type' => $paymentType
+                            ?: $lockedPayment->gateway_payment_type,
+                        'status' => Payment::PAID,
+                        'paid_at' => now(),
+                        'verified_at' => now(),
+                        'reject_reason' => null,
+                    ]);
                 }
-            } elseif ($transactionStatus === 'pending') {
-                $payment->update([
-                    'gateway_status' => Payment::GATEWAY_PENDING,
-                    'gateway_transaction_id' => $transactionId ?: $payment->gateway_transaction_id,
-                ]);
-            } elseif (in_array($transactionStatus, ['expire', 'cancel', 'deny', 'failure'], true)) {
-                $gatewayState = match ($transactionStatus) {
-                    'expire' => Payment::GATEWAY_EXPIRE,
-                    'cancel' => Payment::GATEWAY_CANCEL,
-                    default => Payment::GATEWAY_DENY,
-                };
 
-                $reasonText = match ($gatewayState) {
-                    Payment::GATEWAY_EXPIRE => 'Sesi pembayaran Payment Gateway telah kedaluwarsa.',
-                    Payment::GATEWAY_CANCEL => 'Transaksi Payment Gateway dibatalkan.',
-                    default => 'Pembayaran ditolak atau gagal diproses oleh Payment Gateway.',
-                };
+                PaymentAttempt::query()
+                    ->where('gateway_order_id', $orderId)
+                    ->update([
+                        'status' => 'settlement',
+                        'gateway_transaction_id' => $transactionId ?: null,
+                        'settled_at' => now(),
+                    ]);
 
-                $payment->update([
-                    'gateway_status' => $gatewayState,
-                    'gateway_transaction_id' => $transactionId ?: $payment->gateway_transaction_id,
-                    'status' => Payment::REJECTED,
-                    'reject_reason' => $reasonText,
-                    'paid_at' => null,
-                ]);
+                /*
+                 * INI BAGIAN PENTING:
+                 * Buat settlement dan double-entry ledger.
+                 * PaymentFinancialService sudah memiliki idempotency.
+                 */
+                app(PaymentFinancialService::class)
+                    ->settle($lockedPayment->fresh());
 
-                if ($booking && $customer) {
-                    $customer->notify(new PawCareStatusNotification(
-                        title: 'Pembayaran tidak berhasil',
-                        message: "Pembayaran untuk booking {$booking->invoice_number} belum berhasil. {$reasonText}",
-                        url: route('customer.bookings.pay', $booking->id),
-                    ));
+                if (! $wasAlreadyPaid && $booking && $customer) {
+                    $customer->notify(
+                        new PawCareStatusNotification(
+                            title: 'Pembayaran berhasil (Gateway)',
+                            message: "Pembayaran untuk booking {$booking->invoice_number} telah diterima melalui Midtrans.",
+                            url: route(
+                                'customer.bookings.show',
+                                $booking->id
+                            )
+                        )
+                    );
+                }
+            } elseif ($status === 'pending') {
+                if ($lockedPayment->status !== Payment::PAID) {
+                    $lockedPayment->update([
+                        'gateway_status' => Payment::GATEWAY_PENDING,
+                        'gateway_transaction_id' => $transactionId
+                            ?: $lockedPayment->gateway_transaction_id,
+                    ]);
+
+                    PaymentAttempt::query()
+                        ->where('gateway_order_id', $orderId)
+                        ->where('status', 'creating')
+                        ->update([
+                            'status' => 'pending',
+                            'gateway_transaction_id' => $transactionId ?: null,
+                        ]);
+                }
+            } elseif (in_array(
+                $status,
+                ['expire', 'cancel', 'deny', 'failure'],
+                true
+            )) {
+                // Jangan pernah menurunkan status transaksi yang sudah lunas.
+                if ($lockedPayment->status !== Payment::PAID) {
+                    $gatewayState = match ($status) {
+                        'expire' => Payment::GATEWAY_EXPIRE,
+                        'cancel' => Payment::GATEWAY_CANCEL,
+                        default => Payment::GATEWAY_DENY,
+                    };
+
+                    $reason = match ($status) {
+                        'expire' => 'Sesi pembayaran Midtrans telah kedaluwarsa.',
+                        'cancel' => 'Transaksi Midtrans dibatalkan.',
+                        default => 'Pembayaran ditolak atau gagal diproses Midtrans.',
+                    };
+
+                    $lockedPayment->update([
+                        'gateway_status' => $gatewayState,
+                        'gateway_transaction_id' => $transactionId
+                            ?: $lockedPayment->gateway_transaction_id,
+                        'status' => Payment::REJECTED,
+                        'reject_reason' => $reason,
+                        'paid_at' => null,
+                    ]);
+
+                    PaymentAttempt::query()
+                        ->where('gateway_order_id', $orderId)
+                        ->update([
+                            'status' => $status,
+                            'gateway_transaction_id' => $transactionId ?: null,
+                            'failed_at' => now(),
+                        ]);
+
+                    if ($booking && $customer) {
+                        $customer->notify(
+                            new PawCareStatusNotification(
+                                title: 'Pembayaran tidak berhasil',
+                                message: "Pembayaran untuk booking {$booking->invoice_number} belum berhasil. {$reason}",
+                                url: route(
+                                    'customer.bookings.pay',
+                                    $booking->id
+                                )
+                            )
+                        );
+                    }
                 }
             }
 
             return [
-                'payment' => $payment->fresh(),
+                'payment' => $lockedPayment->fresh(),
                 'idempotent' => false,
             ];
         });
