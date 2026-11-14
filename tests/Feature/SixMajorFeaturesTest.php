@@ -255,6 +255,32 @@ class SixMajorFeaturesTest extends TestCase
         $svc = $this->makeService($biz, 175000);
         $booking = $this->makeBooking($cust, $biz, $pet, [$svc->id => 1]);
 
+        // Konfigurasi Midtrans khusus pengujian.
+        config()->set([
+            'services.midtrans.server_key' => 'SB-Mid-server-test-key',
+            'services.midtrans.is_production' => false,
+        ]);
+
+        // Simulasi respons Midtrans Sandbox.
+        \Illuminate\Support\Facades\Http::fake([
+            'https://api.sandbox.midtrans.com/v2/charge' =>
+                \Illuminate\Support\Facades\Http::response([
+                    'status_code' => '201',
+                    'status_message' => 'Success, transaction is created',
+                    'transaction_id' => 'MID-TRX-TEST-001',
+                    'order_id' => 'PAW-TEST-001',
+                    'transaction_status' => 'pending',
+                    'payment_type' => 'bank_transfer',
+                    'va_numbers' => [
+                        [
+                            'bank' => 'bca',
+                            'va_number' => '1234567890123456',
+                        ],
+                    ],
+                ], 201),
+        ]);
+
+
         // 1. Pelanggan lain tidak dapat membuat transaksi gateway untuk booking ini.
         $this->actingAs($otherCust)
             ->post(route('customer.bookings.pay.gateway', $booking->id), ['channel' => 'qris'])
