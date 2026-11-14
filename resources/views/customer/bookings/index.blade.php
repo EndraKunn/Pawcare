@@ -2,7 +2,10 @@
 @section('title', 'Booking Saya')
 @section('heading', 'Booking saya')
 @section('subtitle', 'Pantau perkembangan setiap layanan.')
-@section('actions')<a class="btn" href="{{ route('catalog') }}">+ Booking baru</a>@endsection
+@section('actions')
+  <a class="btn line" href="{{ route('customer.bookings.cart') }}">🛒 Keranjang booking</a>
+  <a class="btn" href="{{ route('catalog') }}">+ Booking baru</a>
+@endsection
 
 @section('content')
 <div class="tabs">
