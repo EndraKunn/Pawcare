@@ -4,6 +4,7 @@
 @section('subtitle', $business->business_name.' · '.$rangeStart->translatedFormat('d M Y').' s/d '.$rangeEnd->translatedFormat('d M Y'))
 @section('actions')
   <a class="btn line" href="{{ route('owner.business.edit') }}">⚙️ Pengaturan jam &amp; kapasitas slot</a>
+  <a class="btn line" href="{{ route('owner.jeni.preorder.edit') }}">🕒 Pengaturan pre-order</a>
 @endsection
 
 @section('content')
@@ -104,6 +105,7 @@
               <div class="row sp wrapf">
                 <span class="b gold-t">{{ $b->time_label }}–{{ $b->end_time_label }}</span>
                 <x-status :status="$b->status" />
+                @if ($b->is_preorder)<span class="pill wait">Pre-order</span>@endif
               </div>
               <div class="sm">
                 <b>{{ $b->pet->emoji ?? '🐾' }} {{ $b->pet->name ?? '-' }}</b> ({{ $b->pet->species ?? '-' }}) · Pelanggan: {{ $b->customer->name ?? '-' }}
