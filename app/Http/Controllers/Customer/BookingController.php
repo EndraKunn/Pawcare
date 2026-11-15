@@ -69,7 +69,12 @@ class BookingController extends Controller
             $selectedDate = now()->toDateString();
         }
 
-        $slotInfo = $slotService->getDailySlots($business, $selectedDate);
+        $slotInfo = app(\App\Modules\Jeni\BookingCalendar\Services\PreorderPolicyService::class)
+    ->displaySlots(
+        $business,
+        $selectedDate,
+        $slotService->getDailySlots($business, $selectedDate)
+    );
 
         return view('customer.bookings.create', [
             'business' => $business,

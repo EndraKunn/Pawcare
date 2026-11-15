@@ -1,3 +1,4 @@
+
 @extends('layouts.dashboard')
 @section('title', 'Booking '.$business->business_name)
 @section('heading', 'Booking layanan')
@@ -54,6 +55,11 @@
           <div style="margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--field)">
             <div class="row sp wrapf" style="margin-bottom:8px">
               <span class="sm b">Ketersediaan slot ({{ \Carbon\Carbon::parse($selectedDate)->translatedFormat('d M Y') }}):</span>
+
+              @if ($slotInfo['is_preorder'] ?? false)
+                <span class="pill gray" style="font-size:11.5px">Pre-order</span>
+              @endif
+
               @if ($slotInfo['is_open'])
                 <small class="mut">Jam buka {{ $slotInfo['opens_at'] }}–{{ $slotInfo['closes_at'] }}</small>
               @endif
