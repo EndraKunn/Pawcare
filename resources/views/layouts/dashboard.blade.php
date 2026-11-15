@@ -41,6 +41,7 @@
 
         $u->isOwner() => [
             ['📊', 'Dashboard', 'owner.dashboard', 'owner.dashboard'],
+            ['CB', 'Care Board', 'owner.care-board', 'owner.care-board'],
             ['🏢', 'Profil Bisnis', 'owner.business.edit', 'owner.business.*'],
             ['🗓️', 'Kalender & Slot', 'owner.calendar.index', 'owner.calendar.*'],
             ['🕒', 'Pengaturan Pre-order', 'owner.jeni.preorder.edit', 'owner.jeni.preorder.*'],

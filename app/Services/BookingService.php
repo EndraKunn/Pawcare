@@ -11,6 +11,8 @@ use App\Models\Payment;
 use App\Models\Pet;
 use App\Models\Service;
 use App\Models\User;
+use App\Events\BookingCreated;
+use App\Events\BookingStatusUpdated;
 use App\Notifications\PawCareStatusNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -114,6 +116,7 @@ class BookingService
             ]);
 
             $this->log($booking, $customer, Booking::STATUS_WAITING, 'Booking dibuat oleh pelanggan');
+            BookingCreated::dispatch($booking);
 
             return $booking;
         });
@@ -146,6 +149,7 @@ class BookingService
             $booking->update(['status' => $newStatus]);
 
             $this->log($booking, $actor, $newStatus, $note);
+            BookingStatusUpdated::dispatch($booking, $previousStatus, $note);
 
             $notifyStatuses = [
                 Booking::STATUS_CONFIRMED,
