@@ -150,6 +150,8 @@ Route::middleware(['auth', 'role:business_owner'])
         Route::get('/', [Owner\DashboardController::class, 'index'])
             ->name('dashboard');
 
+        Route::get('/care-board', [Owner\CareBoardController::class, 'index'])->name('care-board');
+
         // Kalender Booking & Ketersediaan Slot.
         Route::get('/kalender', [Owner\CalendarController::class, 'index'])
             ->name('calendar.index');
