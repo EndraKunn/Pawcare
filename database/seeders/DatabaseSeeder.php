@@ -192,7 +192,7 @@ class DatabaseSeeder extends Seeder
                 $total += $svc->price * $qty;
             }
 
-            $booking = Booking::create([
+            $booking = Booking::withoutEvents(fn () => Booking::create([
                 'invoice_number' => 'INV-'.$createdAt->format('Ymd').'-'.str_pad((string) ($idx + 1), 4, '0', STR_PAD_LEFT),
                 'customer_id' => $cust->id,
                 'business_id' => $biz->id,
@@ -204,7 +204,7 @@ class DatabaseSeeder extends Seeder
                 'notes' => null,
                 'created_at' => $createdAt,
                 'updated_at' => $createdAt,
-            ]);
+            ]));
 
             foreach ($items as [$svc, $qty]) {
                 BookingItem::create([
