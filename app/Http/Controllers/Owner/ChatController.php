@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Owner;
 
+use App\Events\ChatMessageSent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use Illuminate\Http\RedirectResponse;
@@ -66,11 +67,12 @@ class ChatController extends OwnerController
             ])
             ->findOrFail($conversation);
 
-        // Tandai pesan dari pelanggan sebagai sudah dibaca.
         $model->messages()
             ->where('sender_id', '!=', $owner->id)
             ->whereNull('read_at')
-            ->update(['read_at' => now()]);
+            ->update([
+                'read_at' => now(),
+            ]);
 
         return view('owner.chat.show', [
             'business' => $business,
@@ -81,7 +83,9 @@ class ChatController extends OwnerController
     public function send(Request $request, int $conversation): RedirectResponse
     {
         $owner = $request->user();
-        $model = Conversation::forOwner($owner)->findOrFail($conversation);
+
+        $model = Conversation::forOwner($owner)
+            ->findOrFail($conversation);
 
         $data = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
@@ -91,13 +95,18 @@ class ChatController extends OwnerController
         ]);
 
         DB::transaction(function () use ($owner, $model, $data) {
-            ConversationMessage::create([
+            $message = ConversationMessage::create([
                 'conversation_id' => $model->id,
                 'sender_id' => $owner->id,
                 'body' => trim($data['body']),
             ]);
 
-            $model->update(['last_message_at' => now()]);
+            // Kirim event setelah transaksi berhasil commit.
+            ChatMessageSent::dispatch($message);
+
+            $model->update([
+                'last_message_at' => now(),
+            ]);
         });
 
         return redirect()->route('owner.chat.show', $model->id);

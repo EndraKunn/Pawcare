@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Events\ChatMessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Business;
@@ -14,6 +15,9 @@ use Illuminate\View\View;
 
 class ChatController extends Controller
 {
+    /**
+     * Menampilkan daftar percakapan customer.
+     */
     public function index(Request $request): View
     {
         $user = $request->user();
@@ -36,6 +40,9 @@ class ChatController extends Controller
         return view('customer.chat.index', compact('conversations'));
     }
 
+    /**
+     * Membuat atau membuka percakapan dengan bisnis.
+     */
     public function start(Request $request): RedirectResponse
     {
         $user = $request->user();
@@ -51,18 +58,29 @@ class ChatController extends Controller
         $business = Business::findOrFail((int) $data['business_id']);
 
         $booking = null;
-        if (! empty($data['booking_id'])) {
-            // Pastikan booking benar-benar milik customer ini dan pada bisnis tersebut.
+
+        if (!empty($data['booking_id'])) {
+            // Pastikan booking milik customer dan bisnis yang benar.
             $booking = Booking::forCustomer($user)
                 ->where('business_id', $business->id)
                 ->findOrFail((int) $data['booking_id']);
-        } elseif (! $business->status) {
-            // Bisnis suspend hanya dapat dihubungi jika pelanggan sudah memiliki booking di bisnis tersebut.
-            $hasExistingBooking = Booking::forCustomer($user)->where('business_id', $business->id)->exists();
+        } elseif (!$business->status) {
+
+            // Bisnis suspend hanya dapat dihubungi
+            // jika customer mempunyai booking sebelumnya.
+            $hasExistingBooking = Booking::forCustomer($user)
+                ->where('business_id', $business->id)
+                ->exists();
+
             abort_unless($hasExistingBooking, 404);
         }
 
-        $conversation = DB::transaction(function () use ($user, $business, $booking, $data) {
+        $conversation = DB::transaction(function () use (
+            $user,
+            $business,
+            $booking,
+            $data
+        ) {
             $conv = Conversation::firstOrCreate(
                 [
                     'business_id' => $business->id,
@@ -75,20 +93,33 @@ class ChatController extends Controller
             );
 
             if (filled($data['body'] ?? null)) {
-                ConversationMessage::create([
+
+                $message = ConversationMessage::create([
                     'conversation_id' => $conv->id,
                     'sender_id' => $user->id,
                     'body' => trim((string) $data['body']),
                 ]);
-                $conv->update(['last_message_at' => now()]);
+
+                // Broadcast setelah transaksi berhasil commit.
+                ChatMessageSent::dispatch($message);
+
+                $conv->update([
+                    'last_message_at' => now(),
+                ]);
             }
 
             return $conv;
         });
 
-        return redirect()->route('customer.chat.show', $conversation->id);
+        return redirect()->route(
+            'customer.chat.show',
+            $conversation->id
+        );
     }
 
+    /**
+     * Menampilkan percakapan dan menandai pesan sebagai dibaca.
+     */
     public function show(Request $request, int $conversation): View
     {
         $user = $request->user();
@@ -106,15 +137,27 @@ class ChatController extends Controller
         $model->messages()
             ->where('sender_id', '!=', $user->id)
             ->whereNull('read_at')
-            ->update(['read_at' => now()]);
+            ->update([
+                'read_at' => now(),
+            ]);
 
-        return view('customer.chat.show', ['conversation' => $model]);
+        return view('customer.chat.show', [
+            'conversation' => $model,
+        ]);
     }
 
-    public function send(Request $request, int $conversation): RedirectResponse
-    {
+    /**
+     * Mengirim pesan customer kepada bisnis.
+     */
+    public function send(
+        Request $request,
+        int $conversation
+    ): RedirectResponse {
+
         $user = $request->user();
-        $model = Conversation::forCustomer($user)->findOrFail($conversation);
+
+        $model = Conversation::forCustomer($user)
+            ->findOrFail($conversation);
 
         $data = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
@@ -124,15 +167,25 @@ class ChatController extends Controller
         ]);
 
         DB::transaction(function () use ($user, $model, $data) {
-            ConversationMessage::create([
+
+            $message = ConversationMessage::create([
                 'conversation_id' => $model->id,
                 'sender_id' => $user->id,
                 'body' => trim($data['body']),
             ]);
 
-            $model->update(['last_message_at' => now()]);
+            // Kirim event realtime melalui Laravel Reverb.
+            // Event diproses setelah transaksi database commit.
+            ChatMessageSent::dispatch($message);
+
+            $model->update([
+                'last_message_at' => now(),
+            ]);
         });
 
-        return redirect()->route('customer.chat.show', $model->id);
+        return redirect()->route(
+            'customer.chat.show',
+            $model->id
+        );
     }
 }
