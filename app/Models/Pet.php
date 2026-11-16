@@ -19,6 +19,8 @@ class Pet extends Model
         'species',
         'breed',
         'age',
+        'birth_date',
+        'weight',
         'gender',
         'photo',
         'archived_at',
@@ -26,6 +28,8 @@ class Pet extends Model
     ];
 
     protected $casts = [
+        'birth_date' => 'date',
+        'weight' => 'float',
         'archived_at' => 'datetime',
         'share_health_with_business' => 'boolean',
     ];
@@ -100,5 +104,14 @@ class Pet extends Model
         $months = $this->age % 12;
 
         return $years.' tahun'.($months ? ' '.$months.' bulan' : '');
+    }
+
+    public function getWeightLabelAttribute(): string
+    {
+        if ($this->weight === null) {
+            return '-';
+        }
+
+        return rtrim(rtrim(number_format((float) $this->weight, 2, ',', '.'), '0'), ',').' kg';
     }
 }

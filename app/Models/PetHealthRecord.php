@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class PetHealthRecord extends Model
 {
@@ -61,8 +63,38 @@ class PetHealthRecord extends Model
         return $this->belongsTo(User::class, 'customer_id');
     }
 
+    public function sharingPermissions(): HasMany
+    {
+        return $this->hasMany(PetHealthSharingPermission::class, 'pet_health_record_id');
+    }
+
     public function getTypeLabelAttribute(): string
     {
         return self::TYPES[$this->record_type] ?? 'Catatan';
+    }
+
+    /**
+     * Periksa apakah catatan kesehatan ini diizinkan dilihat oleh bisnis tertentu.
+     * Jika terdapat aturan eksplisit di pet_health_sharing_permissions, gunakan statusnya;
+     * jika belum ada aturan spesifik, ikuti flag global share_health_with_business pada Pet.
+     */
+    public function isSharedWithBusiness(int $businessId): bool
+    {
+        $this->loadMissing('pet');
+        if (! $this->pet) {
+            return false;
+        }
+
+        if (Schema::hasTable('pet_health_sharing_permissions')) {
+            $permission = $this->sharingPermissions()
+                ->where('business_id', $businessId)
+                ->first();
+
+            if ($permission !== null) {
+                return $permission->isActive();
+            }
+        }
+
+        return (bool) $this->pet->share_health_with_business;
     }
 }

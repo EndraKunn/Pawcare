@@ -17,6 +17,10 @@
       <x-field name="breed" label="Ras" :value="$pet->breed" placeholder="Contoh: Golden Retriever" />
       <x-field name="age_years" label="Umur (tahun)" type="number" min="0" max="40" :value="$pet->age !== null ? intdiv($pet->age, 12) : null" hint="Disimpan dalam bulan di database" />
     </div>
+    <div class="form f2">
+      <x-field name="birth_date" label="Tanggal lahir (opsional)" type="date" :value="$pet->birth_date?->toDateString()" />
+      <x-field name="weight" label="Berat badan (kg, opsional)" type="number" min="0.1" max="250" step="0.1" :value="$pet->weight" placeholder="Contoh: 4.5" />
+    </div>
     @php $g = old('gender', $pet->gender ?? 'Jantan'); @endphp
     <div class="fld"><span>Jenis kelamin</span>
       <div class="radios">
