@@ -30,9 +30,6 @@ Route::middleware('auth')->group(function () {
     Route::get('/pembayaran/{payment}/bukti', [PaymentProofController::class, 'show'])
         ->name('payments.proof');
 
-    // Akses lampiran dokumen kesehatan hewan privat tetap divalidasi oleh controller.
-    Route::get('/kesehatan-hewan/{record}/lampiran', [PetHealthAttachmentController::class, 'show'])
-        ->name('pets.health.attachment');
 });
 
 /* ---------------- Customer ---------------- */
@@ -42,35 +39,6 @@ Route::middleware(['auth', 'role:customer'])
     ->group(function () {
         Route::get('/', [Customer\DashboardController::class, 'index'])
             ->name('dashboard');
-
-        /*
-         * Arsipkan, pulihkan, dan riwayat kesehatan hewan.
-         * Diletakkan sebelum resource agar route khusus mudah dikenali.
-         */
-        Route::patch('/pets/{pet}/archive', [Customer\PetController::class, 'archive'])
-            ->name('pets.archive');
-
-        Route::patch('/pets/{pet}/restore', [Customer\PetController::class, 'restore'])
-            ->name('pets.restore');
-
-        Route::get('/pets/{pet}/kesehatan', [Customer\PetHealthController::class, 'show'])
-            ->name('pets.health.show');
-
-        Route::post('/pets/{pet}/kesehatan', [Customer\PetHealthController::class, 'store'])
-            ->name('pets.health.store');
-
-        Route::put('/pets/{pet}/kesehatan/{record}', [Customer\PetHealthController::class, 'update'])
-            ->name('pets.health.update');
-
-        Route::delete('/pets/{pet}/kesehatan/{record}', [Customer\PetHealthController::class, 'destroy'])
-            ->name('pets.health.destroy');
-
-        Route::patch('/pets/{pet}/kesehatan-izin', [Customer\PetHealthController::class, 'toggleShare'])
-            ->name('pets.health.share');
-
-        // CRUD data hewan.
-        Route::resource('pets', Customer\PetController::class)
-            ->except(['show']);
 
         // Notifikasi Customer.
         Route::get('/notifikasi', [
@@ -192,11 +160,6 @@ Route::middleware(['auth', 'role:business_owner'])
         Route::patch('/booking/{booking}/status', [Owner\BookingController::class, 'updateStatus'])
             ->name('bookings.status');
 
-        Route::post('/booking/{booking}/perawatan', [Owner\PetCareNoteController::class, 'store'])
-            ->name('care-notes.store');
-
-        Route::delete('/perawatan/{note}', [Owner\PetCareNoteController::class, 'destroy'])
-            ->name('care-notes.destroy');
 
         // Ulasan Pelanggan (Owner).
         Route::get('/ulasan', [Owner\ReviewController::class, 'index'])

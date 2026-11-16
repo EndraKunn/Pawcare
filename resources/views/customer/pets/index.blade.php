@@ -48,6 +48,9 @@
                         {{ $p->species }}
                         · {{ $p->breed ?? '-' }}
                         · {{ $p->age_label }}
+                        @if ($p->weight !== null)
+                            · {{ $p->weight_label }}
+                        @endif
                         · {{ $p->gender }}
                     </div>
 
@@ -118,7 +121,6 @@
                 </div>
             @endforeach
         </div>
-
-        {{ $pets->links() }}
+        <div class="mt">{{ $pets->links() }}</div>
     @endif
 @endsection

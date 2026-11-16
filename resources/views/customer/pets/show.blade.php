@@ -1,7 +1,7 @@
 @extends('layouts.dashboard')
 @section('title', 'Kesehatan & Riwayat '.$pet->name)
 @section('heading', $pet->emoji.' '.$pet->name.' — Kesehatan & Perawatan')
-@section('subtitle', $pet->species.' · '.($pet->breed ?? 'Campuran').' · '.$pet->age_label.' · '.$pet->gender)
+@section('subtitle', $pet->species.' · '.($pet->breed ?? 'Campuran').' · '.$pet->age_label.($pet->weight !== null ? ' · '.$pet->weight_label : '').' · '.$pet->gender)
 @section('actions')
   <a class="btn line" href="{{ route('customer.pets.edit', $pet->id) }}">✏️ Ubah profil hewan</a>
   <a class="btn line" href="{{ route('customer.pets.index') }}">← Data hewan</a>
@@ -77,6 +77,22 @@
 
             @if ($rec->notes)
               <p class="sm" style="margin:2px 0 0">{{ $rec->notes }}</p>
+            @endif
+
+            @if (isset($relatedBusinesses) && $relatedBusinesses->isNotEmpty())
+              <div class="row wrapf" style="gap:6px;margin-top:4px">
+                @foreach ($relatedBusinesses as $biz)
+                  @php $sharedWithBiz = $rec->isSharedWithBusiness($biz->id); @endphp
+                  <form method="POST" action="{{ route('customer.pets.health.permission', [$pet->id, $rec->id]) }}" class="inline">
+                    @csrf @method('PATCH')
+                    <input type="hidden" name="business_id" value="{{ $biz->id }}">
+                    <input type="hidden" name="granted" value="{{ $sharedWithBiz ? '0' : '1' }}">
+                    <button class="btn sm line" type="submit" style="font-size:11.5px;padding:3px 8px">
+                      {{ $sharedWithBiz ? '🔓 Dibagikan ke '.$biz->business_name : '🔒 Privat dari '.$biz->business_name }}
+                    </button>
+                  </form>
+                @endforeach
+              </div>
             @endif
 
             <div class="row sp wrapf" style="margin-top:4px">

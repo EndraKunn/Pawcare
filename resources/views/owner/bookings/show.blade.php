@@ -45,15 +45,20 @@
       <a class="btn sm line" href="{{ route('owner.payments.show', $booking->payment->id) }}">Buka pembayaran</a></div>
 
     {{-- INFORMASI KESEHATAN HEWAN UNTUK LAYANAN (FITUR 6) --}}
+    @php
+      $sharedHealthRecords = $booking->pet->healthRecords->filter(
+          fn ($hr) => $hr->isSharedWithBusiness((int) $booking->business_id)
+      );
+    @endphp
     <div class="card mt">
       <h3>🩺 Informasi kesehatan hewan ({{ $booking->pet->name }})</h3>
-      @if (! $booking->pet->share_health_with_business)
+      @if (! $booking->pet->share_health_with_business && $sharedHealthRecords->isEmpty())
         <p class="sub" style="margin:4px 0 0">Pelanggan membatasi akses ringkasan kesehatan pribadi hewan ini.</p>
-      @elseif ($booking->pet->healthRecords->isEmpty())
-        <p class="sub" style="margin:4px 0 0">Pelanggan belum menambahkan catatan alergi atau vaksinasi pada profil hewan ini.</p>
+      @elseif ($sharedHealthRecords->isEmpty())
+        <p class="sub" style="margin:4px 0 0">Pelanggan belum membagikan catatan alergi atau vaksinasi pada profil hewan ini.</p>
       @else
         <p class="sub">Ringkasan kesehatan yang dibagikan pemilik hewan untuk keamanan layanan:</p>
-        @foreach ($booking->pet->healthRecords as $hr)
+        @foreach ($sharedHealthRecords as $hr)
           <div class="item" style="flex-direction:column;align-items:stretch;gap:4px">
             <div class="row sp">
               <div>
