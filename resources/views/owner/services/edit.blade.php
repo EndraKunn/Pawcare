@@ -17,6 +17,7 @@
       <x-field name="price" label="Harga (Rp)" type="number" min="0" step="1" :value="(int) $service->price" required />
       <x-field name="duration_minutes" label="Durasi (menit)" type="number" min="15" max="480" :value="$service->duration_minutes ?? 60" required />
     </div>
+    <x-field name="capacity" label="Kapasitas kuota per slot" type="number" min="1" max="100" :value="$service->capacity ?? 5" required />
     <x-field name="description" label="Deskripsi" type="textarea" :value="$service->description" />
     <label class="check"><input type="hidden" name="status" value="0"><input type="checkbox" name="status" value="1" @checked(old('status', $service->status))> Layanan aktif (dapat dipesan)</label>
     <div class="row" style="justify-content:flex-end"><a class="btn line" href="{{ route('owner.services.index') }}">Batal</a><button class="btn" type="submit">Simpan perubahan</button></div>

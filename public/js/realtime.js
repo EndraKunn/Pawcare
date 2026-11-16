@@ -423,6 +423,28 @@
         target.prepend(item);
     }
 
+
+    // EVENT: CATALOG CHANGED (REALTIME CATALOG & INVENTORY)
+    function handleCatalogChanged(data) {
+        document.dispatchEvent(
+            new CustomEvent('pawcare:catalog-changed', {
+                detail: data
+            })
+        );
+
+        var banner = document.getElementById('catalogRealtimeBanner');
+        var text = document.getElementById('catalogRealtimeText');
+        if (banner) {
+            if (text && data && data.service_name) {
+                text.textContent = 'Layanan "' + data.service_name + '" baru saja diperbarui secara real-time.';
+            }
+            banner.style.display = 'flex';
+        }
+    }
+
+    echo.channel('catalog.updates')
+        .listen('.catalog.changed', handleCatalogChanged);
+
     // SUBSCRIBE PRIVATE CHANNELS
 
     if (userId) {

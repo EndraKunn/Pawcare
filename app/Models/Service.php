@@ -19,6 +19,7 @@ class Service extends Model
         'category',
         'unit',
         'duration_minutes',
+        'capacity',
         'description',
         'price',
         'status',
@@ -30,7 +31,20 @@ class Service extends Model
             'price' => 'float',
             'status' => 'boolean',
             'duration_minutes' => 'integer',
+            'capacity' => 'integer',
         ];
+    }
+
+    /** Harga dalam satuan Integer Rupiah (NFR-17). */
+    public function getPriceRupiahAttribute(): int
+    {
+        return (int) round((float) $this->price);
+    }
+
+    /** Status ketersediaan efektif layanan berdasarkan status aktif dan kapasitas kuota. */
+    public function getIsAvailableAttribute(): bool
+    {
+        return (bool) $this->status && (int) ($this->capacity ?? 5) > 0;
     }
 
     /** Foto per kategori layanan: foto lokal -> ilustrasi fallback. */

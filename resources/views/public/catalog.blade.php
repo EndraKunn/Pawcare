@@ -3,17 +3,22 @@
 
 @section('content')
 <h2 style="margin:0 0 4px;font-size:26px">Temukan mitra terbaik</h2>
-<p class="mut" style="margin:0 0 20px">Bandingkan bisnis penitipan dan perawatan hewan. Setiap bisnis memiliki layanan, jadwal, dan harga sendiri.</p>
+<p class="mut" style="margin:0 0 20px">Bandingkan bisnis penitipan dan perawatan hewan. Setiap bisnis memiliki layanan, jadwal, kapasitas slot, dan harga sendiri.</p>
 
-<form method="GET" action="{{ route('catalog') }}" class="grid filter-row" style="grid-template-columns:1.8fr 1fr 1fr auto;align-items:end">
+<div id="catalogRealtimeBanner" class="alert" style="display:none;margin-bottom:16px">
+  🔄 <span id="catalogRealtimeText">Katalog layanan baru saja diperbarui oleh mitra bisnis.</span>
+  <a class="btn sm line" href="{{ request()->fullUrl() }}" style="margin-left:auto">Muat ulang</a>
+</div>
+
+<form id="catalogFilterForm" method="GET" action="{{ route('catalog') }}" class="grid filter-row" style="grid-template-columns:1.6fr 1fr 1fr 1fr auto;align-items:end">
   <label class="fld">
-    <span>Cari lokasi, kota, atau bisnis</span>
+    <span>Cari lokasi, kota, bisnis, atau layanan</span>
     <input name="q" value="{{ $q }}" placeholder="Contoh: Madiun, Ngawi, atau nama bisnis">
   </label>
 
   <label class="fld">
     <span>Jenis layanan</span>
-    <select name="category">
+    <select name="category" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
       <option value="">Semua layanan</option>
       @foreach (\App\Models\Service::CATEGORIES as $c)
         <option value="{{ $c }}" @selected($category === $c)>{{ $c }}</option>
@@ -23,7 +28,7 @@
 
   <label class="fld">
     <span>Jenis hewan</span>
-    <select name="species">
+    <select name="species" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
       <option value="">Semua hewan</option>
       @foreach (\App\Models\Pet::SPECIES as $sp)
         <option value="{{ $sp }}" @selected(($species ?? '') === $sp)>{{ $sp }}</option>
@@ -31,9 +36,18 @@
     </select>
   </label>
 
+  <label class="fld">
+    <span>Urutkan</span>
+    <select name="sort" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
+      <option value="name" @selected(($sort ?? 'name') === 'name')>Nama (A–Z)</option>
+      <option value="price_asc" @selected(($sort ?? '') === 'price_asc')>Harga termurah</option>
+      <option value="rating_desc" @selected(($sort ?? '') === 'rating_desc')>Rating tertinggi</option>
+    </select>
+  </label>
+
   <div class="row" style="gap:8px">
     <button class="btn" style="height:44px" type="submit">Cari</button>
-    @if ($q !== '' || ! empty($category) || ! empty($species))
+    @if ($q !== '' || ! empty($category) || ! empty($species) || ($sort ?? 'name') !== 'name')
       <a class="btn line" style="height:44px" href="{{ route('catalog') }}">Reset</a>
     @endif
   </div>
