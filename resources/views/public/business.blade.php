@@ -58,6 +58,7 @@
 
     $upcomingClosures = $business->closures->filter(
         fn ($closure) =>
+            ($closure->is_active ?? true) &&
             $closure->closed_date &&
             $closure->closed_date->toDateString() >= now()->toDateString()
     );
@@ -129,21 +130,58 @@
     @endif
 </div>
 
-<div class="sec-t">Layanan tersedia<small>Hanya layanan milik {{ $business->business_name }} — bisnis lain punya daftar &amp; harga sendiri</small></div>
+<div class="sec-t">Layanan tersedia<small>Hanya layanan milik {{ $business->business_name }} — bisnis lain punya daftar, kapasitas kuota &amp; harga sendiri</small></div>
 @if ($services->isEmpty())
   <div class="card"><x-empty icon="✂️" title="Belum ada layanan aktif" /></div>
 @else
   <div class="tw"><table>
-    <thead><tr><th>Layanan</th><th>Jenis</th><th>Keterangan</th><th class="num">Harga</th><th></th></tr></thead>
+    <thead><tr><th>Layanan</th><th>Jenis</th><th>Durasi / Kuota Slot</th><th>Keterangan</th><th class="num">Harga</th><th></th></tr></thead>
     <tbody>
       @foreach ($services as $s)
-        <tr>
-          <td><div class="row"><x-photo class="thumb" :src="$s->image_url" :fallback="$s->image_fallback_url" :alt="$s->category" /><b>{{ $s->name }}</b></div></td><td>{{ $s->category }}</td><td>{{ $s->description ?? '-' }}</td>
-          <td class="num nw">{{ rupiah($s->price) }} <small class="mut">/ {{ $s->unit }}</small></td>
+        <tr data-catalog-service-id="{{ $s->id }}">
+          <td><div class="row"><x-photo class="thumb" :src="$s->image_url" :fallback="$s->image_fallback_url" :alt="$s->category" /><b>{{ $s->name }}</b></div></td>
+          <td>{{ $s->category }}</td>
+          <td>{{ $s->duration_minutes ?? 60 }} mnt · Maks {{ $s->capacity ?? 5 }} slot</td>
+          <td>{{ $s->description ?? '-' }}</td>
+          <td class="num nw" data-catalog-price>{{ rupiah($s->price) }} <small class="mut">/ {{ $s->unit }}</small></td>
           <td class="num">@if (! auth()->check() || auth()->user()->isCustomer())<a class="btn sm" href="{{ route('customer.bookings.create', ['business' => $business->id, 'service' => $s->id]) }}">Pilih</a>@endif</td>
         </tr>
       @endforeach
     </tbody></table></div>
+@endif
+
+@if (isset($slotPreview))
+<div class="card mt">
+  <div class="row sp wrapf">
+    <div>
+      <h3>📊 Cek ketersediaan slot &amp; inventori layanan</h3>
+      <p class="sub" style="margin:2px 0 0">Periksa sisa kuota slot sebelum membuat booking pada tanggal pilihan Anda.</p>
+    </div>
+    <form method="GET" action="{{ route('catalog.show', $business->id) }}" class="row wrapf" style="gap:8px">
+      <input type="date" name="date" value="{{ $previewDate ?? now()->addDay()->toDateString() }}" min="{{ now()->toDateString() }}">
+      @if ($services->isNotEmpty())
+        <select name="service">
+          @foreach ($services as $s)
+            <option value="{{ $s->id }}" @selected(($selectedServiceId ?? null) === $s->id)>{{ $s->name }} ({{ $s->duration_minutes ?? 60 }} mnt)</option>
+          @endforeach
+        </select>
+      @endif
+      <button class="btn sm line" type="submit">Cek slot</button>
+    </form>
+  </div>
+
+  @if (! ($slotPreview['is_open'] ?? false))
+    <p class="sm mut" style="margin:12px 0 0">{{ $slotPreview['reason'] ?? 'Tidak ada slot tersedia pada tanggal ini.' }}</p>
+  @else
+    <div class="chips" style="gap:8px;margin-top:12px">
+      @foreach ($slotPreview['slots'] ?? [] as $sl)
+        <span class="pill {{ $sl['available'] ? 'conf' : ($sl['is_break'] ? 'wait' : 'bad') }}">
+          {{ $sl['time'] }} ({{ $sl['is_break'] ? 'Istirahat' : 'Sisa '.$sl['remaining'].'/'.$sl['capacity'] }})
+        </span>
+      @endforeach
+    </div>
+  @endif
+</div>
 @endif
 
 {{-- RATING DAN ULASAN PELANGGAN --}}

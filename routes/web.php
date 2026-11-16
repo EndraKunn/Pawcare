@@ -12,11 +12,6 @@ use App\Http\Controllers\PetHealthAttachmentController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
-/* ---------------- Publik ---------------- */
-Route::get('/', [HomeController::class, 'index'])->name('home');
-Route::get('/bisnis', [HomeController::class, 'catalog'])->name('catalog');
-Route::get('/bisnis/{business}', [HomeController::class, 'showBusiness'])->name('catalog.show');
-
 /* ---------------- Webhook Payment Gateway ---------------- */
 Route::post('/webhook/payment/midtrans', [PaymentWebhookController::class, 'midtrans'])
     ->name('webhooks.midtrans');
@@ -123,25 +118,6 @@ Route::middleware(['auth', 'role:business_owner'])
         // Kalender Booking & Ketersediaan Slot.
         Route::get('/kalender', [Owner\CalendarController::class, 'index'])
             ->name('calendar.index');
-
-        // Pengelolaan layanan.
-        Route::get('/layanan', [Owner\ServiceController::class, 'index'])
-            ->name('services.index');
-
-        Route::post('/layanan', [Owner\ServiceController::class, 'store'])
-            ->name('services.store');
-
-        Route::get('/layanan/{service}/ubah', [Owner\ServiceController::class, 'edit'])
-            ->name('services.edit');
-
-        Route::put('/layanan/{service}', [Owner\ServiceController::class, 'update'])
-            ->name('services.update');
-
-        Route::patch('/layanan/{service}/toggle', [Owner\ServiceController::class, 'toggle'])
-            ->name('services.toggle');
-
-        Route::delete('/layanan/{service}', [Owner\ServiceController::class, 'destroy'])
-            ->name('services.destroy');
 
         // Data pelanggan bisnis.
         Route::get('/pelanggan', [Owner\CustomerController::class, 'index'])
