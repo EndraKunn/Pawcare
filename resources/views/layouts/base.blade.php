@@ -17,6 +17,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ asset('css/pawcare.css') }}">
+@livewireStyles
 @stack('head')
 </head>
 <body>
@@ -27,6 +28,7 @@
 <script src="{{ asset('vendor/laravel-echo.js') }}" defer></script>
 <script src="{{ asset('js/realtime.js') }}" defer></script>
 <script src="{{ asset('js/app.js') }}" defer></script>
+@livewireScripts
 @stack('scripts')
 </body>
 </html>

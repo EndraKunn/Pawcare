@@ -2,6 +2,7 @@
 
 namespace App\Modules\Endra;
 
+use App\Modules\Endra\CatalogInventory\Livewire\CatalogBrowser;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 
@@ -26,6 +27,10 @@ class EndraServiceProvider extends ServiceProvider
             if (is_file($root.'/Routes/web.php') && ! $this->app->routesAreCached()) {
                 Route::middleware('web')->group($root.'/Routes/web.php');
             }
+        }
+
+        if (class_exists(\Livewire\Livewire::class) && class_exists(CatalogBrowser::class)) {
+            \Livewire\Livewire::component('endra-catalog-browser', CatalogBrowser::class);
         }
     }
 }
