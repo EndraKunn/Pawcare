@@ -18,6 +18,7 @@
 
     var EchoCtor = window.Echo && (window.Echo.default || window.Echo);
 
+    if (window.Echo && typeof window.Echo.socketId !== 'function') { window.Echo.socketId = function () { return undefined; }; }
     if (!key || typeof EchoCtor !== 'function') return;
 
     var csrf = meta('csrf-token');
@@ -37,6 +38,7 @@
     });
 
     window.PawCareEcho = echo;
+    window.Echo = echo;
 
     // Kelas warna status booking
     var statusClasses = {

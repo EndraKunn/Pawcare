@@ -2,8 +2,10 @@
 
 namespace App\Modules\Endra\CatalogInventory\Livewire;
 
-use App\Modules\Endra\CatalogInventory\Services\CatalogInventoryService;
-use Illuminate\Http\Request;
+use App\Models\Business;
+use App\Models\Pet;
+use App\Models\Service;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -25,46 +27,73 @@ class CatalogBrowser extends Component
     #[Url(as: 'sort', except: 'name')]
     public string $sort = 'name';
 
-    public function updatedQ(): void
-    {
-        $this->resetPage();
-    }
-
-    public function updatedCategory(): void
-    {
-        $this->resetPage();
-    }
-
-    public function updatedSpecies(): void
-    {
-        $this->resetPage();
-    }
-
-    public function updatedSort(): void
+    public function updated(): void
     {
         $this->resetPage();
     }
 
     public function resetFilters(): void
     {
-        $this->q = '';
-        $this->category = '';
-        $this->species = '';
+        $this->reset(['q', 'category', 'species', 'sort']);
         $this->sort = 'name';
         $this->resetPage();
     }
 
-    public function render(CatalogInventoryService $catalogService): View
+    public function render(): View
     {
-        $virtualRequest = Request::create('/bisnis', 'GET', [
-            'q' => $this->q,
-            'category' => $this->category,
-            'species' => $this->species,
-            'sort' => $this->sort,
+        $q = trim($this->q);
+        $validCategory = in_array($this->category, Service::CATEGORIES, true) ? $this->category : '';
+        $validSpecies = in_array($this->species, Pet::SPECIES, true) ? $this->species : '';
+        $validSort = in_array($this->sort, ['name', 'price_asc', 'rating_desc'], true) ? $this->sort : 'name';
+
+        $query = Business::active()
+            ->with(['owner:id,name', 'operatingHours'])
+            ->withCount([
+                'services as services_count' => fn ($s) => $s->active(),
+            ])
+            ->withMin([
+                'services as min_price' => fn ($s) => $s->active(),
+            ], 'price');
+
+        if (Schema::hasTable('reviews')) {
+            $query->withAvg(['reviews as rating_avg' => fn ($r) => $r->validCompleted()], 'rating')
+                ->withCount(['reviews as reviews_count' => fn ($r) => $r->validCompleted()]);
+        }
+
+        $query->when($q !== '', function ($b) use ($q) {
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($q));
+            $keyword = "%{$escaped}%";
+
+            $b->where(function ($w) use ($keyword) {
+                $w->whereRaw("LOWER(COALESCE(business_name, '')) LIKE ? ESCAPE '\\'", [$keyword])
+                    ->orWhereRaw("LOWER(COALESCE(address, '')) LIKE ? ESCAPE '\\'", [$keyword])
+                    ->orWhereHas('services', function ($s) use ($keyword) {
+                        $s->active()->whereRaw("LOWER(COALESCE(name, '')) LIKE ? ESCAPE '\\'", [$keyword]);
+                    });
+            });
+        })
+        ->when(
+            $validCategory !== '',
+            fn ($b) => $b->whereHas('services', fn ($s) => $s->active()->where('category', $validCategory))
+        )
+        ->when(
+            $validSpecies !== '',
+            fn ($b) => $b->acceptsSpecies($validSpecies)
+        );
+
+        if ($validSort === 'price_asc') {
+            $query->orderByRaw('COALESCE(min_price, 999999999) ASC')->orderBy('business_name');
+        } elseif ($validSort === 'rating_desc' && Schema::hasTable('reviews')) {
+            $query->orderByRaw('COALESCE(rating_avg, 0) DESC')->orderBy('business_name');
+        } else {
+            $query->orderBy('business_name');
+        }
+
+        return view('endra-catalog::livewire.catalog-browser', [
+            'businesses' => $query->paginate(9),
+            'activeCategory' => $validCategory,
+            'activeSpecies' => $validSpecies,
+            'activeSort' => $validSort,
         ]);
-
-        $data = $catalogService->filterCatalog($virtualRequest);
-
-        return view('endra-catalog::livewire.catalog-browser', $data);
     }
 }
