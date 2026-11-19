@@ -12,7 +12,7 @@ Sistem informasi layanan penitipan & perawatan hewan berbasis web, multi-klien (
 - **Keamanan**: password di-hash (bcrypt), CSRF, escaping Blade, middleware `role`, query dibatasi per pemilik (data bisnis lain → 404), bukti pembayaran di disk privat dengan otorisasi, throttle login.
 
 ## 2. Kebutuhan
-- PHP **8.2+** (Laravel 12), ekstensi: `pdo_sqlite`, `sqlite3`, `mbstring`, `openssl`, `fileinfo`, `ctype`, `tokenizer`, `xml`, `curl` (untuk MySQL tambahkan `pdo_mysql`).
+- PHP **8.4+** (Laravel 12), ekstensi: `pdo_sqlite`, `sqlite3`, `mbstring`, `openssl`, `fileinfo`, `ctype`, `tokenizer`, `xml`, `curl` (untuk MySQL tambahkan `pdo_mysql`).
 - Composer 2.x. Node.js **tidak** diperlukan (CSS/JS lokal di `public/`).
 - Font Poppins dimuat dari Google Fonts (opsional; jika offline memakai font sistem).
 
