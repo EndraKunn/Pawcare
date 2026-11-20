@@ -2,7 +2,7 @@
 @section('title', 'Pembayaran')
 @section('heading', 'Pembayaran')
 @section('subtitle', 'Invoice '.$booking->invoice_number)
-@section('actions')<a class="btn line" href="{{ route('customer.bookings.show', $booking->id) }}">← Detail booking</a>@endsection
+@section('actions')<a class="btn line" href="{{ route('customer.bookings.show', $booking->id) }}">Detail Booking</a>@endsection
 
 @section('content')
 @php
