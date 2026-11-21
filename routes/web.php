@@ -28,7 +28,7 @@ Route::middleware('auth')->group(function () {
 });
 
 /* ---------------- Customer ---------------- */
-Route::middleware(['auth', 'role:customer'])
+Route::middleware(['auth', 'verified', 'role:customer'])
     ->prefix('customer')
     ->name('customer.')
     ->group(function () {
@@ -106,7 +106,7 @@ Route::middleware(['auth', 'role:customer'])
     });
 
 /* ---------------- Business Owner ---------------- */
-Route::middleware(['auth', 'role:business_owner'])
+Route::middleware(['auth', 'verified', 'role:business_owner'])
     ->prefix('owner')
     ->name('owner.')
     ->group(function () {

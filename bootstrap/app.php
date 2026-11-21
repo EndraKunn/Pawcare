@@ -1,6 +1,8 @@
+
 <?php
 
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -17,13 +19,21 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware) {
+
+        // Global Security Headers
+        $middleware->append(SecurityHeaders::class);
+
+        // Role dan permission
         $middleware->alias(['role' => EnsureRole::class]);
+
         // Webhook Payment Gateway diverifikasi menggunakan signature SHA-512.
         $middleware->validateCsrfTokens(except: [
             'webhook/payment/*',
         ]);
+
         // Guest yang membuka halaman terproteksi diarahkan ke login.
         $middleware->redirectGuestsTo(fn () => route('login'));
+
         // User yang sudah login dan membuka /login diarahkan ke dashboard sesuai role.
         $middleware->redirectUsersTo(fn () => route('dashboard'));
     })

@@ -2,13 +2,15 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailTrait;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
-    use Notifiable;
+    use Notifiable, MustVerifyEmailTrait;
 
     public const ROLE_CUSTOMER = 'customer';
     public const ROLE_OWNER = 'business_owner';
@@ -18,15 +20,26 @@ class User extends Authenticatable
      * Catatan keamanan: role/status HANYA boleh diisi dari kode server
      * (registrasi, seeder, admin), jangan pernah dari $request->all().
      */
-    protected $fillable = ['name', 'email', 'phone', 'password', 'role', 'status'];
+    protected $fillable = [
+        'name',
+        'email',
+        'phone',
+        'password',
+        'role',
+        'status',
+    ];
 
-    protected $hidden = ['password', 'remember_token'];
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
 
     protected function casts(): array
     {
         return [
             'password' => 'hashed',
             'status' => 'boolean',
+            'email_verified_at' => 'datetime',
         ];
     }
 
