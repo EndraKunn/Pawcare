@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'pawcare' => [
+        'platform_fee_percent' => (float) env('PAWCARE_PLATFORM_FEE_PERCENT', 10),
+    ],
     'midtrans' => [
         'merchant_id' => env('MIDTRANS_MERCHANT_ID', ''),
         'client_key' => env('MIDTRANS_CLIENT_KEY', ''),

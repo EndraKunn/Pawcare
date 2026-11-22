@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Route;
 
 /* ---------------- Webhook Payment Gateway ---------------- */
 Route::post('/webhook/payment/midtrans', [PaymentWebhookController::class, 'midtrans'])
+    ->middleware('throttle:60,1')
     ->name('webhooks.midtrans');
 
 /* ---------------- Semua role yang sudah login ---------------- */
@@ -171,6 +172,13 @@ Route::middleware(['auth', 'verified', 'role:business_owner'])
             ->name('payments.reject');
 
         // Transaksi dan laporan bisnis.
+        // Penarikan saldo bisnis (Withdrawal).
+        Route::get('/penarikan', [Owner\WithdrawalController::class, 'index'])
+            ->name('withdrawals.index');
+
+        Route::post('/penarikan', [Owner\WithdrawalController::class, 'store'])
+            ->name('withdrawals.store');
+
         Route::get('/transaksi', [Owner\TransactionController::class, 'index'])
             ->name('transactions');
 
@@ -195,6 +203,28 @@ Route::middleware(['auth', 'role:admin'])
 
         Route::get('/booking', [Admin\MonitorController::class, 'bookings'])
             ->name('bookings');
+
+        // Keuangan Platform: Settlement, Withdrawal, Refund & Rekonsiliasi (Perlu Tindak Lanjut).
+        Route::get('/keuangan', [Admin\PaymentFinanceController::class, 'index'])
+            ->name('finance.index');
+
+        Route::post('/keuangan/rekonsiliasi', [Admin\PaymentFinanceController::class, 'reconcile'])
+            ->name('finance.reconcile');
+
+        Route::patch('/keuangan/withdrawal/{withdrawal}/setujui', [Admin\PaymentFinanceController::class, 'approve'])
+            ->name('finance.withdrawals.approve');
+
+        Route::patch('/keuangan/withdrawal/{withdrawal}/tolak', [Admin\PaymentFinanceController::class, 'reject'])
+            ->name('finance.withdrawals.reject');
+
+        Route::patch('/keuangan/withdrawal/{withdrawal}/bayar', [Admin\PaymentFinanceController::class, 'paid'])
+            ->name('finance.withdrawals.paid');
+
+        Route::post('/keuangan/pembayaran/{payment}/refund', [Admin\PaymentFinanceController::class, 'refund'])
+            ->name('finance.refunds.store');
+
+        Route::patch('/keuangan/refund/{refund}/selesai', [Admin\PaymentFinanceController::class, 'completeManualRefund'])
+            ->name('finance.refunds.complete');
 
         Route::get('/pembayaran', [Admin\MonitorController::class, 'payments'])
             ->name('payments');

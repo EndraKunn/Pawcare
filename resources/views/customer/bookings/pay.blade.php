@@ -1,4 +1,4 @@
-@extends('layouts.dashboard')
+﻿@extends('layouts.dashboard')
 @section('title', 'Pembayaran')
 @section('heading', 'Pembayaran')
 @section('subtitle', 'Invoice '.$booking->invoice_number)
@@ -57,6 +57,43 @@
           </div>
         @endif
 
+        {{-- Informasi Virtual Account Midtrans --}}
+        @php
+          $vaNumber = null;
+          $vaBank = str_replace('_va', '', (string) $pay->gateway_payment_type);
+
+          if ($pay->gateway_reference && str_ends_with((string) $pay->gateway_payment_type, '_va')) {
+              $vaAttempt = $pay->attempts()
+                  ->where('gateway_order_id', $pay->gateway_reference)
+                  ->where('status', 'pending')
+                  ->first();
+
+              $vaList = data_get($vaAttempt?->response_payload, 'va_numbers', []);
+              $vaData = collect($vaList)->firstWhere('bank', $vaBank);
+              $vaNumber = data_get($vaData, 'va_number');
+          }
+        @endphp
+
+        @if ($vaNumber)
+          <div class="bank mt" style="margin-bottom:16px">
+            <div class="lgo">{{ strtoupper($vaBank) }}</div>
+            <div style="min-width:0;flex:1">
+              <small class="mut">Nomor Virtual Account Midtrans</small>
+              <div class="no" style="overflow-wrap:anywhere">
+                {{ $vaNumber }}
+              </div>
+              <button type="button"
+                      class="btn sm line mt"
+                      data-va="{{ $vaNumber }}"
+                      onclick="navigator.clipboard.writeText(this.dataset.va).then(() => { this.textContent = 'Berhasil Disalin!'; }).catch(() => { window.prompt('Salin nomor VA:', this.dataset.va); })">
+                Salin Nomor VA
+              </button>
+              <small class="mut" style="display:block;margin-top:8px">
+                Gunakan nomor ini untuk pembayaran melalui {{ strtoupper($vaBank) }} Virtual Account.
+              </small>
+            </div>
+          </div>
+        @endif
         <form method="POST" action="{{ route('customer.bookings.pay.gateway', $booking->id) }}" class="form">
           @csrf
           <x-field name="channel" label="Pilih metode pembayaran gateway" type="select" :options="$channels" :value="$pay->gateway_payment_type ?? 'qris'" required />

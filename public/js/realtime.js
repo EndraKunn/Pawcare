@@ -18,8 +18,48 @@
 
     var EchoCtor = window.Echo && (window.Echo.default || window.Echo);
 
-    if (window.Echo && typeof window.Echo.socketId !== 'function') { window.Echo.socketId = function () { return undefined; }; }
-    if (!key || typeof EchoCtor !== 'function') return;
+    if (window.Echo && typeof window.Echo.socketId !== 'function') {
+        window.Echo.socketId = function () {
+            return undefined;
+        };
+    }
+
+    // FALLBACK POLLING
+    // FR-30: Care Board 10 detik
+    // FR-31: Tracking Pelanggan 15 detik
+    var fallbackTimer = null;
+
+    function startFallbackPolling() {
+        if (fallbackTimer) return;
+
+        var isCareBoard = !!document.querySelector('[data-care-column]');
+        var isTracking = !!document.querySelector('[data-realtime-status-log]');
+
+        if (!isCareBoard && !isTracking) return;
+
+        var intervalMs = isCareBoard ? 10000 : 15000;
+
+        fallbackTimer = window.setInterval(function () {
+            if (document.hidden) return;
+
+            var active = document.activeElement;
+            if (active && ['INPUT', 'TEXTAREA', 'SELECT'].indexOf(active.tagName) !== -1) return;
+
+            window.location.reload();
+        }, intervalMs);
+    }
+
+    function stopFallbackPolling() {
+        if (fallbackTimer) {
+            window.clearInterval(fallbackTimer);
+            fallbackTimer = null;
+        }
+    }
+
+    if (!key || typeof EchoCtor !== 'function') {
+        startFallbackPolling();
+        return;
+    }
 
     var csrf = meta('csrf-token');
 
@@ -39,6 +79,21 @@
 
     window.PawCareEcho = echo;
     window.Echo = echo;
+
+    startFallbackPolling();
+
+    if (echo.connector && echo.connector.pusher && echo.connector.pusher.connection) {
+        var conn = echo.connector.pusher.connection;
+
+        conn.bind('connected', stopFallbackPolling);
+        conn.bind('disconnected', startFallbackPolling);
+        conn.bind('unavailable', startFallbackPolling);
+        conn.bind('failed', startFallbackPolling);
+
+        if (conn.state === 'connected') {
+            stopFallbackPolling();
+        }
+    }
 
     // Kelas warna status booking
     var statusClasses = {
