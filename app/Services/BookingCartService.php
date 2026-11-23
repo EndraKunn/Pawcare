@@ -190,14 +190,14 @@ class BookingCartService
 
     public function total(array $cart): float
     {
-        $total = 0.0;
+        $total = 0;
         foreach ($cart['groups'] ?? [] as $group) {
             foreach ($group['items'] ?? [] as $item) {
-                $total += (float) $item['unit_price'] * (int) $item['quantity'];
+                $total += (int) round((float) $item['unit_price']) * (int) $item['quantity'];
             }
         }
 
-        return round($total, 2);
+        return (int) $total;
     }
 
     public function itemCount(array $cart): int
