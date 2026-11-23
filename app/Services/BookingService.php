@@ -94,7 +94,7 @@ class BookingService
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            $total = 0.0;
+            $total = 0;
             foreach ($services as $service) {
                 $qty = max(1, (int) ($data['quantities'][$service->id] ?? 1));
                 BookingItem::create([
@@ -103,7 +103,7 @@ class BookingService
                     'price' => $service->price,
                     'quantity' => $qty,
                 ]);
-                $total += $service->price * $qty;
+                $total += (int) round((float) $service->price) * $qty;
             }
 
             $booking->update(['total_price' => $total]);

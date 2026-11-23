@@ -35,7 +35,7 @@ class StoreBookingRequest extends FormRequest
             ],
             'qty' => ['nullable', 'array'],
             'qty.*' => ['nullable', 'integer', 'min:1', 'max:365'],
-            'notes' => ['nullable', 'string', 'max:1000'],
+            'notes' => ['nullable', 'string', 'max:200'],
         ];
     }
 
@@ -62,6 +62,7 @@ class StoreBookingRequest extends FormRequest
             'services.*.exists' => 'Layanan tidak tersedia atau bukan milik bisnis yang dipilih.',
             'pet_id.exists' => 'Hewan tidak ditemukan pada akun Anda.',
             'business_id.exists' => 'Bisnis tidak tersedia.',
+            'notes.max' => 'Catatan khusus maksimal 200 karakter.',
         ];
     }
 
@@ -89,12 +90,17 @@ class StoreBookingRequest extends FormRequest
             $quantities[(int) $serviceId] = max(1, (int) ($this->input("qty.$serviceId") ?? 1));
         }
 
+        $rawNotes = $this->validated('notes');
+        $cleanNotes = filled($rawNotes)
+            ? mb_substr(trim(strip_tags((string) $rawNotes)), 0, 200)
+            : null;
+
         return [
             'business_id' => (int) $this->validated('business_id'),
             'pet_id' => (int) $this->validated('pet_id'),
             'booking_date' => $this->validated('booking_date'),
             'booking_time' => $this->validated('booking_time'),
-            'notes' => $this->validated('notes'),
+            'notes' => $cleanNotes !== '' ? $cleanNotes : null,
             'quantities' => $quantities,
         ];
     }

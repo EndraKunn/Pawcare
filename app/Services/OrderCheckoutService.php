@@ -66,7 +66,7 @@ class OrderCheckoutService
                                 'checked_out_at' => now(),
                             ]);
 
-                            $orderTotal = 0.0;
+                            $orderTotal = 0;
                             $orderSnapshot = [
                                 'version' => 1,
                                 'order_number' => $order->order_number,
@@ -128,8 +128,8 @@ class OrderCheckoutService
                                         throw ValidationException::withMessages(['cart' => 'Detail layanan pada keranjang tidak valid.']);
                                     }
 
-                                    $currentPrice = round((float) $service->price, 2);
-                                    $cartPrice = round((float) ($line['unit_price'] ?? -1), 2);
+                                    $currentPrice = (int) round((float) $service->price);
+                                    $cartPrice = (int) round((float) ($line['unit_price'] ?? -1));
                                     if ($currentPrice !== $cartPrice) {
                                         $priceUpdates[$service->id] = [
                                             'name' => $service->name,
@@ -175,11 +175,11 @@ class OrderCheckoutService
                                     'quantities' => $quantities,
                                 ], $order);
 
-                                $orderTotal += (float) $booking->total_price;
+                                $orderTotal += (int) round((float) $booking->total_price);
                                 $serviceSnapshots = [];
                                 foreach ($services as $service) {
                                     $quantity = $quantities[$service->id];
-                                    $unitPrice = round((float) $service->price, 2);
+                                    $unitPrice = (int) round((float) $service->price);
                                     $serviceSnapshots[] = [
                                         'service_id' => (int) $service->id,
                                         'name' => $service->name,
